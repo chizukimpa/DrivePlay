@@ -1,0 +1,16 @@
+.DS_Store
+*.crdownload
+
+# macOS build
+DrivePlay/build/
+
+# Windows build / dependencies
+DrivePlayWindows/node_modules/
+DrivePlayWindows/tools/
+DrivePlayWindows/dist/
+DrivePlayWindows/prototype/
+
+# Local artifacts
+release/
+DrivePlay-macOS-universal.zip
+*.log

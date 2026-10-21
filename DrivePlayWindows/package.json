@@ -1,0 +1,67 @@
+{
+  "name": "driveplay",
+  "productName": "DrivePlay",
+  "version": "1.0.0",
+  "description": "DrivePlay para Windows — vídeos MKV do Google Drive com biblioteca de temporadas",
+  "main": "src/main.js",
+  "author": "DrivePlay",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "pack:win": "electron-packager . DrivePlay --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon.ico --asar --app-version=1.0.0 --ignore=\"^/(node_modules|prototype|tools|scripts|dist|\\.git|\\.github)$\" --ignore=\"^/(package-lock\\.json|assets/icon\\.icns)$\"",
+    "pack:mac": "electron-packager . DrivePlay --platform=darwin --arch=x64 --out=dist --overwrite --icon=assets/icon.icns --asar --app-version=1.0.0 --ignore=\"^/(node_modules|prototype|tools|scripts|dist|\\.git|\\.github)$\" --ignore=\"^/(package-lock\\.json|assets/icon\\.ico)$\"",
+    "dist:win": "electron-builder --win",
+    "dist:win:portable": "electron-builder --win portable",
+    "dist:win:installer": "electron-builder --win nsis",
+    "icon": "node scripts/make-icon.js"
+  },
+  "devDependencies": {
+    "@electron/packager": "^18.4.0",
+    "electron": "^37.2.6",
+    "electron-builder": "^26.0.12",
+    "png-to-ico": "^2.1.8"
+  },
+  "build": {
+    "appId": "local.driveplay.app",
+    "productName": "DrivePlay",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DrivePlay",
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
+    }
+  }
+}

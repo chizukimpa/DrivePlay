@@ -1,0 +1,109 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag da versão (ex.: v1.0.0)"
+        required: true
+        default: "v1.0.0"
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: DrivePlayWindows
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: DrivePlayWindows/package-lock.json
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Gerar instalador e portátil
+        run: npm run dist:win
+
+      - name: Gerar pasta portátil
+        run: npm run pack:win
+
+      - name: Compactar pasta portátil
+        shell: pwsh
+        run: |
+          New-Item -ItemType File -Path "dist/DrivePlay-win32-x64/portable.txt" -Force | Out-Null
+          Compress-Archive -Path "dist/DrivePlay-win32-x64" -DestinationPath "dist/DrivePlay-1.0.0-win32-x64-portable.zip" -Force
+
+      - name: Publicar artefatos
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: |
+            DrivePlayWindows/dist/*.exe
+            DrivePlayWindows/dist/*.zip
+          if-no-files-found: error
+
+  macos:
+    name: macOS universal
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: DrivePlay
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compilar app universal
+        run: |
+          chmod +x build.sh build-universal.sh
+          ./build-universal.sh
+
+      - name: Compactar app
+        run: ditto -c -k --sequesterRsrc --keepParent build/DrivePlay.app ../DrivePlay-macOS-universal.zip
+
+      - name: Publicar artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: DrivePlay-macOS-universal.zip
+          if-no-files-found: error
+
+  release:
+    name: Publicar release
+    needs:
+      - windows
+      - macos
+    runs-on: ubuntu-latest
+    steps:
+      - name: Baixar artefatos
+        uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Criar release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: DrivePlay ${{ github.event.inputs.tag || github.ref_name }}
+          files: release/**/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
