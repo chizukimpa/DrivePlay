@@ -62,6 +62,14 @@ atualiza a lista para pegar episódios novos e **move** a fonte para outra cole�
 Nada é apagado do Google Drive: a biblioteca guarda apenas os links e os nomes dos
 episódios.
 
+Para levar a biblioteca do DrivePlay do macOS para o Windows, feche os dois apps e
+copie o arquivo `library.json` de `~/Library/Application Support/DrivePlay/` para:
+
+- instalador: `%APPDATA%\DrivePlay\library.json`
+- portátil: `DrivePlayData\library.json` ao lado do `DrivePlay.exe`
+
+O app aceita o formato antigo (lista) e o novo (coleções).
+
 ### Pastas e episódios
 
 Ao abrir o link de uma pasta compartilhada, o app lista os vídeos com miniatura,
