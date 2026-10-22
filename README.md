@@ -11,7 +11,7 @@ original, use **Abrir no VLC**.
 
 ## Baixar
 
-Baixe a versão mais recente na página de **Releases** do GitHub:
+Baixe a versão mais recente na página de **[Releases](https://github.com/chizukimpa/DrivePlay/releases/latest)** do GitHub:
 
 | Sistema | Arquivo | Observação |
 | --- | --- | --- |
