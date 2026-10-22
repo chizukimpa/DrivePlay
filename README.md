@@ -1,5 +1,9 @@
 # DrivePlay
 
+> Player de vídeos do Google Drive para macOS e Windows.
+
+## Sobre
+
 Leitor de vídeos (MKV, AVI, MP4…) hospedados no **Google Drive**, com duas versões:
 
 - **macOS** — app nativo em Swift (`DrivePlay/`).
@@ -9,9 +13,31 @@ O Google Drive transcodifica o vídeo no servidor, então **MKV funciona sem ins
 codecs ou converter nada**. Para legendas embutidas, faixas de áudio e qualidade
 original, use **Abrir no VLC**.
 
-## Baixar
+## Funcionalidades
 
-Baixe a versão mais recente na página de **[Releases](https://github.com/chizukimpa/DrivePlay/releases/latest)** do GitHub:
+- Reprodução de MKV, AVI e MP4 direto do Google Drive.
+- Navegação por pastas e subpastas, com busca e miniaturas.
+- Episódio anterior/próximo e progresso por episódio.
+- Pular abertura e encerramento, com opções de pulo automático, avanço automático,
+  retomada e marcação de assistidos.
+- Biblioteca persistente de coleções e temporadas, com gerenciamento de fontes.
+- Menu de contexto para reproduzir, marcar como assistido, resetar progresso, abrir no
+  VLC, baixar, compartilhar e copiar links.
+- Download do arquivo original e abertura do stream no VLC.
+- Sessão persistente do Google para arquivos privados.
+
+## Tecnologias
+
+- **macOS:** Swift, SwiftUI e WKWebView.
+- **Windows:** Electron, JavaScript, HTML e CSS.
+- **Google Drive:** player/preview e transcodificação no servidor.
+- **VLC:** reprodução local opcional.
+- **GitHub Actions:** build e publicação das releases.
+
+## Download e acesso
+
+Baixe a versão mais recente na página de
+**[Releases](https://github.com/chizukimpa/DrivePlay/releases/latest)**:
 
 | Sistema | Arquivo | Observação |
 | --- | --- | --- |
@@ -24,12 +50,7 @@ Os builds não têm assinatura digital paga. No Windows, o SmartScreen pode pedi
 **Mais informações → Executar assim mesmo**. No macOS, clique com o botão direito no
 app → **Abrir** na primeira execução.
 
-## Documentação
-
-- [DrivePlay para macOS](DrivePlay/README.md)
-- [DrivePlay para Windows](DrivePlayWindows/README.md)
-
-## Compilar
+## Como rodar
 
 ### macOS
 
@@ -39,12 +60,19 @@ cd DrivePlay
 open build/DrivePlay.app
 ```
 
+Para instalar em Aplicativos:
+
+```bash
+./build.sh --install
+```
+
 Para gerar um binário universal (Intel + Apple Silicon):
 
 ```bash
-cd DrivePlay
 ./build-universal.sh
 ```
+
+Requisitos: macOS 14+ e VLC opcional (recomendado para MKV).
 
 ### Windows
 
@@ -55,9 +83,10 @@ npm start
 npm run dist:win
 ```
 
-Os instaladores ficam em `DrivePlayWindows/dist`.
+Os instaladores ficam em `DrivePlayWindows/dist`. Requisitos: Windows 10/11 64 bits,
+Node.js e VLC opcional.
 
-## Releases automáticas
+## Releases
 
 O workflow em `.github/workflows/release.yml` compila as duas versões quando uma tag
 `v*` é enviada:
@@ -77,6 +106,11 @@ DrivePlay/            app nativo macOS (Swift/SwiftUI)
 DrivePlayWindows/     app Windows (Electron)
 .github/workflows/    build e publicação das releases
 ```
+
+## Documentação
+
+- [DrivePlay para macOS](DrivePlay/README.md)
+- [DrivePlay para Windows](DrivePlayWindows/README.md)
 
 ## Licença
 
