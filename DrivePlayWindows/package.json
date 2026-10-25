@@ -1,7 +1,7 @@
 {
   "name": "driveplay",
   "productName": "DrivePlay",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "DrivePlay para Windows — vídeos MKV do Google Drive com biblioteca de temporadas",
   "main": "src/main.js",
   "author": "DrivePlay",
@@ -10,8 +10,9 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "pack:win": "electron-packager . DrivePlay --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon.ico --asar --app-version=1.1.0 --ignore=\"^/(node_modules|prototype|tools|scripts|dist|\\.git|\\.github)$\" --ignore=\"^/(package-lock\\.json|assets/icon\\.icns)$\"",
-    "pack:mac": "electron-packager . DrivePlay --platform=darwin --arch=x64 --out=dist --overwrite --icon=assets/icon.icns --asar --app-version=1.1.0 --ignore=\"^/(node_modules|prototype|tools|scripts|dist|\\.git|\\.github)$\" --ignore=\"^/(package-lock\\.json|assets/icon\\.ico)$\"",
+    "pack:win": "electron-packager . DrivePlay --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon.ico --asar --app-version=1.2.0 --extra-resource=tools/ffmpeg/win32-x64/ffmpeg.exe --ignore=\"^/(dist.*|node_modules|prototype|tools|scripts|\\.git|\\.github)$\" --ignore=\"^/(package-lock\\.json|assets/icon\\.icns)$\"",
+    "pack:mac": "electron-packager . DrivePlay --platform=darwin --arch=universal --out=dist --overwrite --icon=assets/icon.icns --asar --app-version=1.2.0 --extra-resource=tools/ffmpeg/darwin-x64/ffmpeg --ignore=\"^/(dist.*|node_modules|prototype|tools|scripts|\\.git|\\.github)$\" --ignore=\"^/(package-lock\\.json|assets/icon\\.ico)$\"",
+    "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
     "dist:win:portable": "electron-builder --win portable",
     "dist:win:installer": "electron-builder --win nsis",
@@ -34,6 +35,26 @@
       "assets/**/*",
       "package.json"
     ],
+    "mac": {
+      "category": "public.app-category.video",
+      "icon": "assets/icon.icns",
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-macOS-universal-${version}.${ext}",
+      "x64ArchFiles": "Contents/Resources/ffmpeg/*",
+      "extraResources": [
+        {
+          "from": "tools/ffmpeg/darwin-x64/ffmpeg",
+          "to": "ffmpeg/ffmpeg"
+        }
+      ]
+    },
     "win": {
       "target": [
         {
@@ -50,7 +71,13 @@
         }
       ],
       "icon": "assets/icon.ico",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "extraResources": [
+        {
+          "from": "tools/ffmpeg/win32-x64/ffmpeg.exe",
+          "to": "ffmpeg/ffmpeg.exe"
+        }
+      ]
     },
     "nsis": {
       "oneClick": false,

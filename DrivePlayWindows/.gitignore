@@ -1,0 +1,6 @@
+tools/ffmpeg/
+dist/
+dist-*/
+tools/native-test/log*.txt
+tools/native-test/player.png
+tools/native-test/shot*.png

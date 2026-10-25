@@ -8,6 +8,9 @@ contextBridge.exposeInMainWorld('api', {
   platform: process.platform,
   testMode: process.env.DRIVEPLAY_TEST === '1',
   playerPreload: pathToFileURL(path.join(__dirname, 'player-preload.js')).toString(),
+  nativePlayerPage: pathToFileURL(
+    path.join(__dirname, 'renderer', 'native', 'player.html')
+  ).toString(),
 
   fetchFolder: (id) => ipcRenderer.invoke('drive:fetchFolder', id),
   fetchTitle: (id) => ipcRenderer.invoke('drive:fetchTitle', id),
@@ -25,6 +28,7 @@ contextBridge.exposeInMainWorld('api', {
   revealDownload: () => ipcRenderer.invoke('download:reveal'),
 
   registerPlayer: (id) => ipcRenderer.send('player:register', id),
+  setPlayerMode: (mode) => ipcRenderer.send('player:mode', mode),
   seekPlayer: (time) => ipcRenderer.send('player:seek', time),
   setPlayerMuted: (muted) => ipcRenderer.send('player:mute', muted),
   setPlayerFill: (enabled) => ipcRenderer.send('player:fill', !!enabled),

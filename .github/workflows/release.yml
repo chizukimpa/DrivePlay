@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag da versão (ex.: v1.1.0)"
+        description: "Tag da versão (ex.: v1.2.0)"
         required: true
-        default: "v1.1.0"
+        default: "v1.2.0"
 
 permissions:
   contents: write
@@ -37,6 +37,10 @@ jobs:
       - name: Instalar dependências
         run: npm ci
 
+      - name: Baixar ffmpeg
+        shell: bash
+        run: ./scripts/fetch-ffmpeg.sh
+
       - name: Gerar instalador e portátil
         run: npm run dist:win
 
@@ -46,8 +50,9 @@ jobs:
       - name: Compactar pasta portátil
         shell: pwsh
         run: |
+          $version = (Get-Content package.json | ConvertFrom-Json).version
           New-Item -ItemType File -Path "dist/DrivePlay-win32-x64/portable.txt" -Force | Out-Null
-          Compress-Archive -Path "dist/DrivePlay-win32-x64" -DestinationPath "dist/DrivePlay-1.1.0-win32-x64-portable.zip" -Force
+          Compress-Archive -Path "dist/DrivePlay-win32-x64" -DestinationPath "dist/DrivePlay-$version-win32-x64-portable.zip" -Force
 
       - name: Publicar artefatos
         uses: actions/upload-artifact@v4
@@ -63,24 +68,43 @@ jobs:
     runs-on: macos-latest
     defaults:
       run:
-        working-directory: DrivePlay
+        working-directory: DrivePlayWindows
+    env:
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Compilar app universal
-        run: |
-          chmod +x build.sh build-universal.sh
-          ./build-universal.sh
+      - name: Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: DrivePlayWindows/package-lock.json
 
-      - name: Compactar app
-        run: ditto -c -k --sequesterRsrc --keepParent build/DrivePlay.app ../DrivePlay-macOS-universal-1.1.0.zip
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Baixar ffmpeg
+        run: |
+          chmod +x scripts/fetch-ffmpeg.sh
+          ./scripts/fetch-ffmpeg.sh
+
+      - name: Gerar app universal
+        run: npm run dist:mac
+
+      - name: Assinar e compactar
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          codesign --force --deep --sign - dist/mac-universal/DrivePlay.app
+          rm -f "dist/DrivePlay-macOS-universal-$VERSION.zip.blockmap"
+          ditto -c -k --keepParent dist/mac-universal/DrivePlay.app "dist/DrivePlay-macOS-universal-$VERSION.zip"
 
       - name: Publicar artefato
         uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: DrivePlay-macOS-universal-1.1.0.zip
+          path: DrivePlayWindows/dist/DrivePlay-macOS-universal-*.zip
           if-no-files-found: error
 
   release:

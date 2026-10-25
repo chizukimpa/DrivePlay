@@ -6,6 +6,7 @@
 (function () {
   "use strict";
 
+  if (/[?&]native=1(?:&|$)/.test(window.location.search)) return;
   if (window.__dpLocalBooted) return;
   window.__dpLocalBooted = true;
 
@@ -145,6 +146,9 @@
       player.toast("Vídeo local: use o player do DrivePlay.");
     },
     onFill: function (enabled) { bridge("setFill", enabled); },
+    saveSettings: function (patch) {
+      try { bridge("saveSettings", JSON.stringify(patch)); } catch (error) { /* noop */ }
+    },
     onControls: function (visible) { bridge("onControls", visible); },
     onState: function (hasVideo, duration, position, paused, ended) {
       bridge("onState", hasVideo, duration, position, paused, ended);

@@ -97,6 +97,40 @@ final class LibraryStore {
     }
 
     /**
+     * Marks an episode as watched/unwatched. Progress is owned by the native
+     * side (the player writes it in the background), so the WebView cannot do
+     * this by saving its whole library document.
+     */
+    synchronized String setWatched(String id, boolean watched) {
+        if (TextUtils.isEmpty(id)) return cached;
+        try {
+            JSONObject document = new JSONObject(cached);
+            JSONObject progress = document.optJSONObject("progress");
+            if (progress == null) {
+                progress = new JSONObject();
+                document.put("progress", progress);
+            }
+            JSONObject item = progress.optJSONObject(id);
+            if (item == null) item = new JSONObject();
+            double duration = item.optDouble("duration", 0);
+            double time = item.optDouble("time", 0);
+            item.put("watched", watched);
+            if (watched) {
+                if (duration > 0) item.put("time", duration);
+            } else if (duration > 0 && time >= duration - 1) {
+                item.put("time", 0);
+            }
+            item.put("updated", System.currentTimeMillis());
+            progress.put(id, item);
+            cached = document.toString();
+            preferences.edit().putString(KEY_LIBRARY, cached).apply();
+        } catch (Exception ignored) {
+            // Keep the previous valid copy.
+        }
+        return cached;
+    }
+
+    /**
      * Updates the resume point, keeps the recents list in sync and returns the
      * refreshed document so the WebView can re-render without another call.
      */

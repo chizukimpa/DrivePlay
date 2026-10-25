@@ -11,6 +11,58 @@ body {
   overscroll-behavior: none;
 }
 
+/* Native backend: the video lives in a TextureView behind this WebView. */
+html.dp-native,
+html.dp-native body {
+  background: transparent !important;
+}
+
+html.dp-native #dp-root,
+html.dp-native #dp-root .dp-stage {
+  background: transparent !important;
+}
+
+#dp-root .dp-cues {
+  position: absolute;
+  left: 50%;
+  bottom: 20%;
+  transform: translateX(-50%);
+  z-index: 3;
+  display: none;
+  max-width: 90%;
+  padding: 0;
+  border-radius: 8px;
+  background: transparent;
+  text-align: center;
+  white-space: pre-line;
+  pointer-events: none;
+  font-family: var(--dp-cue-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif);
+  font-size: calc(17px * var(--dp-cue-size, 1.3));
+  font-weight: 600;
+  line-height: 1.32;
+  color: var(--dp-cue-color, #ffffff);
+  text-shadow: none;
+}
+
+#dp-root .dp-cues.dp-cues-on {
+  display: block;
+}
+
+#dp-root.dp-cue-bg .dp-cues {
+  padding: 4px 12px;
+  background: rgba(0, 0, 0, 0.62);
+}
+
+#dp-root.dp-cue-outline .dp-cues {
+  -webkit-text-stroke: calc(1px + 0.035em) rgba(0, 0, 0, 0.92);
+  paint-order: stroke fill;
+  text-shadow: 0 2px 7px rgba(0, 0, 0, 0.92);
+}
+
+#dp-root .dp-cues.dp-cues-on {
+  display: block;
+}
+
 #dp-root {
   position: fixed;
   top: 0;
@@ -109,7 +161,7 @@ body {
   z-index: 2;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 180ms ease;
+  transition: opacity 240ms cubic-bezier(0.22, 0.9, 0.3, 1);
   background:
     linear-gradient(to bottom, rgba(0, 0, 0, 0.72), transparent 22%),
     linear-gradient(to top, rgba(0, 0, 0, 0.86), transparent 34%);
@@ -133,7 +185,7 @@ body {
   pointer-events: none;
   opacity: 0;
   transform: translateY(-10px);
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition: opacity 240ms cubic-bezier(0.22, 0.9, 0.3, 1), transform 240ms cubic-bezier(0.22, 0.9, 0.3, 1);
 }
 
 #dp-root.dp-visible .dp-top {
@@ -226,7 +278,7 @@ body {
   pointer-events: none;
   opacity: 0;
   transform: translateY(12px);
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition: opacity 240ms cubic-bezier(0.22, 0.9, 0.3, 1), transform 240ms cubic-bezier(0.22, 0.9, 0.3, 1);
 }
 
 #dp-root.dp-visible .dp-bottom {
@@ -308,10 +360,26 @@ body {
 
 #dp-root .dp-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 8px;
+  row-gap: 8px;
   padding-top: 2px;
+}
+
+/* Speed, quality and Chrome live in the menu; keeping them out of the row
+   leaves room for bigger, easier-to-hit buttons. */
+#dp-root .dp-controls [data-act="speed"],
+#dp-root .dp-controls [data-act="quality"],
+#dp-root .dp-controls [data-act="chrome"] {
+  display: none;
+}
+
+#dp-root .dp-extra {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 #dp-root .dp-controls .dp-btn {
@@ -409,6 +477,18 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  animation: dp-menu-in 190ms cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+@keyframes dp-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 #dp-root .dp-menu button {
@@ -596,6 +676,18 @@ body {
 
 #dp-root .dp-pill.dp-show {
   display: inline-flex;
+  animation: dp-pill-in 200ms cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+@keyframes dp-pill-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
 }
 
 #dp-root .dp-pill svg {
@@ -603,14 +695,26 @@ body {
   height: 15px;
 }
 
+#dp-root.dp-cover .dp-pill {
+  top: calc(env(safe-area-inset-top, 0px) + 86px);
+  padding: 11px 16px;
+  gap: 8px;
+  font-size: 14px;
+}
+
+#dp-root.dp-cover .dp-pill svg {
+  width: 18px;
+  height: 18px;
+}
+
 #dp-root.dp-cover .dp-top {
-  min-height: 46px;
-  padding: calc(env(safe-area-inset-top, 0px) + 4px) 8px 4px;
-  gap: 5px;
+  min-height: 74px;
+  padding: calc(env(safe-area-inset-top, 0px) + 24px) 18px 8px;
+  gap: 9px;
 }
 
 #dp-root.dp-cover .dp-title {
-  font-size: 12px;
+  font-size: 13.5px;
 }
 
 #dp-root.dp-cover .dp-sub {
@@ -618,74 +722,151 @@ body {
 }
 
 #dp-root.dp-cover .dp-btn {
-  width: 36px;
-  height: 36px;
+  width: 46px;
+  height: 46px;
 }
 
 #dp-root.dp-cover .dp-btn svg {
-  width: 19px;
-  height: 19px;
+  width: 23px;
+  height: 23px;
 }
 
 #dp-root.dp-cover .dp-chip {
-  height: 30px;
-  padding: 0 9px;
-  font-size: 10.5px;
+  height: 36px;
+  padding: 0 13px;
+  font-size: 13px;
 }
 
 #dp-root.dp-cover .dp-bottom {
-  padding: 4px 8px calc(env(safe-area-inset-bottom, 0px) + 6px);
+  padding: 4px 12px calc(env(safe-area-inset-bottom, 0px) + 8px);
 }
 
-#dp-root.dp-cover .dp-controls {
-  gap: 5px;
-}
-
-#dp-root.dp-cover .dp-controls .dp-btn {
-  width: 34px;
-  height: 34px;
-}
-
-#dp-root.dp-cover .dp-controls .dp-btn-primary {
-  width: 42px;
-  height: 42px;
+#dp-root.dp-cover .dp-seek-row {
+  gap: 8px;
 }
 
 #dp-root.dp-cover .dp-time {
-  min-width: 34px;
-  font-size: 10.5px;
+  min-width: 42px;
+  font-size: 13px;
 }
 
 #dp-root.dp-cover .dp-seek {
-  height: 22px;
+  height: 30px;
+}
+
+#dp-root.dp-cover .dp-seek::-webkit-slider-runnable-track {
+  height: 5px;
+}
+
+#dp-root.dp-cover .dp-seek::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+}
+
+#dp-root.dp-cover .dp-controls {
+  gap: 6px;
+}
+
+#dp-root.dp-cover .dp-controls .dp-btn {
+  width: 46px;
+  height: 46px;
+}
+
+#dp-root.dp-cover .dp-controls .dp-text-btn {
+  min-width: 48px;
+  padding: 0 8px;
+  font-size: 14px;
+}
+
+#dp-root.dp-cover .dp-controls .dp-btn-primary {
+  width: 54px;
+  height: 54px;
+  margin: 0 2px;
+}
+
+#dp-root.dp-cover .dp-controls .dp-btn-primary svg {
+  width: 28px;
+  height: 28px;
 }
 
 #dp-root.dp-cover .dp-big {
-  width: 58px;
-  height: 58px;
+  width: 64px;
+  height: 64px;
 }
 
 #dp-root.dp-cover .dp-big svg {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
 }
 
 #dp-root.dp-cover .dp-menu {
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
-  right: 8px;
+  right: 14px;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 106px);
+  min-width: 212px;
+  max-height: calc(100% - 122px);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
-/* On the tiny cover display only the essential transport controls stay in the
-   bottom row; speed, quality, Chrome and episode navigation live in the menu. */
-@media (max-width: 360px) {
-  #dp-root.dp-cover .dp-controls [data-act="speed"],
-  #dp-root.dp-cover .dp-controls [data-act="quality"],
-  #dp-root.dp-cover .dp-controls [data-act="chrome"] {
-    display: none;
-  }
+#dp-root.dp-cover .dp-menu button {
+  min-height: 46px;
+  padding: 0 14px;
+  font-size: 15px;
+}
 
+#dp-root.dp-cover .dp-menu .dp-menu-title {
+  font-size: 11.5px;
+}
+
+#dp-root.dp-cover .dp-toast {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 122px);
+  font-size: 13.5px;
+}
+
+#dp-root.dp-cover .dp-error {
+  padding: 16px;
+}
+
+#dp-root.dp-cover .dp-error-card {
+  padding: 18px 16px;
+}
+
+#dp-root.dp-cover .dp-error h3 {
+  font-size: 19px;
+}
+
+#dp-root.dp-cover .dp-error p {
+  font-size: 14px;
+}
+
+#dp-root.dp-cover .dp-error-actions .dp-btn,
+#dp-root.dp-cover .dp-error-actions .dp-chip {
+  height: 48px;
+  padding: 0 18px;
+  font-size: 14px;
+}
+
+#dp-root.dp-cover .dp-pill {
+  top: calc(env(safe-area-inset-top, 0px) + 84px);
+  padding: 10px 16px;
+  font-size: 13px;
+}
+
+#dp-root.dp-cover .dp-pill svg {
+  width: 17px;
+  height: 17px;
+}
+
+/* On the cover display speed, quality and Chrome live in the menu so the
+   transport buttons can stay big enough to tap. */
+#dp-root.dp-cover .dp-extra {
+  gap: 9px;
+}
+
+@media (max-width: 360px) {
   #dp-root.dp-cover .dp-title-text {
-    font-size: 11.5px;
+    font-size: 12.5px;
   }
 
   #dp-root.dp-cover .dp-top .dp-chip {
@@ -752,5 +933,16 @@ body {
   #dp-root .dp-time {
     min-width: 34px;
     font-size: 10.5px;
+  }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  #dp-root *,
+  #dp-root *::before,
+  #dp-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

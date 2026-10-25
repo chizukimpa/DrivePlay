@@ -1,15 +1,20 @@
 import { normalizeLibrary } from './library.js';
 
 export const DEFAULT_SETTINGS = {
-  skipIntro: true,
+  skipIntro: false,
   introSeconds: 120,
-  skipEnding: true,
+  skipEnding: false,
   endingSeconds: 190,
   autoNext: true,
   resumePlayback: true,
   showSkipButtons: true,
   autoFullscreen: true,
   fillScreen: false,
+  subtitleSize: 1.3,
+  subtitleColor: '#ffffff',
+  subtitleOutline: true,
+  subtitleFont: 'sans',
+  subtitleBackground: true,
   libraryMode: false,
   selectedCollectionID: null,
   lastFolderID: null,
@@ -52,6 +57,26 @@ export function normalizeSettings(raw) {
       1200,
       DEFAULT_SETTINGS.endingSeconds
     ),
+    subtitleSize: clamp(
+      input.subtitleSize == null ? 1.3 : input.subtitleSize,
+      0.8,
+      2.5,
+      DEFAULT_SETTINGS.subtitleSize
+    ),
+    subtitleColor:
+      input.subtitleColor === '#ffe066' || input.subtitleColor === '#9be7ff'
+        ? input.subtitleColor
+        : '#ffffff',
+    subtitleOutline:
+      input.subtitleOutline == null ? DEFAULT_SETTINGS.subtitleOutline : !!input.subtitleOutline,
+    subtitleFont:
+      input.subtitleFont === 'serif' || input.subtitleFont === 'mono'
+        ? input.subtitleFont
+        : 'sans',
+    subtitleBackground:
+      input.subtitleBackground == null
+        ? DEFAULT_SETTINGS.subtitleBackground
+        : !!input.subtitleBackground,
     libraryMode: !!input.libraryMode,
     selectedCollectionID:
       typeof input.selectedCollectionID === 'string' ? input.selectedCollectionID : null,

@@ -6,18 +6,22 @@
 
 Leitor de vídeos (MKV, AVI, MP4…) hospedados no **Google Drive**, com três versões:
 
-- **macOS** — app nativo em Swift (`DrivePlay/`).
-- **Windows** — app Electron com a mesma interface e funções (`DrivePlayWindows/`).
+- **macOS e Windows** — app Electron com player nativo (ffmpeg + Chromium) a partir
+  da 1.2.0 (`DrivePlayWindows/`). O app Swift 1.1.0 continua no repositório como
+  versão anterior (`DrivePlay/`).
 - **Android** — app WebView nativo, otimizado para celular e para a tela de capa do
   Galaxy Z Flip 6 via MultiStar (`DrivePlayAndroid/`).
 
-O Google Drive transcodifica o vídeo no servidor, então **MKV funciona sem instalar
-codecs ou converter nada**. Para legendas embutidas, faixas de áudio e qualidade
-original, use **Abrir no VLC**.
+O player nativo toca o **arquivo original do MKV**, com **faixas de áudio** e
+**legendas embutidas**, sem instalar codecs. Quando o Drive bloqueia o download do
+original, o app cai automaticamente no preview do Drive.
 
 ## Funcionalidades
 
 - Reprodução de MKV, AVI e MP4 direto do Google Drive.
+- **Player nativo (Windows/macOS)** com faixas de áudio e legendas embutidas,
+  estilo de legenda, ±10 s, velocidade, preencher a tela e retomada.
+- **Android** com player nativo (ExoPlayer), faixas de áudio, legendas e cache.
 - Navegação por pastas e subpastas, com busca e miniaturas.
 - Episódio anterior/próximo e progresso por episódio.
 - Pular abertura em **120 s** e encerramento em **190 s** por padrão, com opções de
@@ -51,11 +55,9 @@ apps de computador:
 
 ## Tecnologias
 
-- **macOS:** Swift, SwiftUI e WKWebView.
-- **Windows:** Electron, JavaScript, HTML e CSS.
-- **Android:** Java, WebView, HTML, CSS e JavaScript.
-- **Google Drive:** player/preview e transcodificação no servidor.
-- **VLC:** reprodução local opcional.
+- **macOS e Windows:** Electron, JavaScript, HTML, CSS, ffmpeg e Chromium.
+- **Android:** Java, ExoPlayer/Media3, WebView, HTML, CSS e JavaScript.
+- **Google Drive:** arquivo original (download direto) com fallback para o preview.
 - **GitHub Actions:** build e publicação das releases.
 
 ## Download e acesso
@@ -65,10 +67,10 @@ Baixe a versão mais recente na página de
 
 | Sistema | Arquivo | Observação |
 | --- | --- | --- |
-| Windows | `DrivePlay-Setup-1.1.0-x64.exe` | Instalador (recomendado). |
-| Windows | `DrivePlay-Portable-1.1.0-x64.exe` | Portátil em um arquivo. |
-| Windows | `DrivePlay-1.1.0-win32-x64-portable.zip` | Pasta portátil. |
-| macOS | `DrivePlay-macOS-universal-1.1.0.zip` | App universal (Intel e Apple Silicon), macOS 14+. |
+| Windows | `DrivePlay-Setup-1.2.0-x64.exe` | Instalador (recomendado). |
+| Windows | `DrivePlay-Portable-1.2.0-x64.exe` | Portátil em um arquivo. |
+| Windows | `DrivePlay-1.2.0-win32-x64-portable.zip` | Pasta portátil. |
+| macOS | `DrivePlay-macOS-universal-1.2.0.zip` | App universal (Intel e Apple Silicon), macOS 14+, com player nativo. |
 | Android | `DrivePlay-Android-1.2.0.apk` | Android 7+; biblioteca, pastas e player próprios, com tela de capa via MultiStar. |
 
 Os builds não têm assinatura digital paga. No Windows, o SmartScreen pode pedir
@@ -99,36 +101,34 @@ preview do Drive dentro do app.
 ### macOS
 
 ```bash
+cd DrivePlayWindows
+npm install
+npm run dist:mac
+```
+
+O app universal fica em `DrivePlayWindows/dist/DrivePlay-macOS-universal-*.zip`.
+Requisitos: macOS 14+, Node.js 22+ e o ffmpeg em `tools/ffmpeg/darwin-x64/`
+(`./scripts/fetch-ffmpeg.sh`).
+
+O app Swift da versão 1.1.0 continua disponível em `DrivePlay/`:
+
+```bash
 cd DrivePlay
-./build.sh
-open build/DrivePlay.app
-```
-
-Para instalar em Aplicativos:
-
-```bash
-./build.sh --install
-```
-
-Para gerar um binário universal (Intel + Apple Silicon):
-
-```bash
 ./build-universal.sh
 ```
-
-Requisitos: macOS 14+ e VLC opcional (recomendado para MKV).
 
 ### Windows
 
 ```bat
 cd DrivePlayWindows
 npm install
+scripts\fetch-ffmpeg.sh
 npm start
 npm run dist:win
 ```
 
 Os instaladores ficam em `DrivePlayWindows/dist`. Requisitos: Windows 10/11 64 bits,
-Node.js e VLC opcional.
+Node.js 22+ e o ffmpeg em `tools/ffmpeg/win32-x64/`.
 
 ### Android
 
@@ -143,11 +143,16 @@ Requisitos: Android SDK 37, JDK 17 e as ferramentas de build em
 
 ## Releases
 
-### 1.2.0 — Android
+### 1.2.0 — Android, Windows e macOS
 
-Reescrita do app Android: biblioteca, coleções, pastas do Drive, player próprio e
-suporte a vídeos locais. Os builds de macOS e Windows continuam na 1.1.0 e são os
-mesmos arquivos daquela release.
+- **Windows/macOS:** player nativo (ffmpeg + Chromium) com MKV original, faixas de
+  áudio, legendas embutidas e estilo de legenda; abertura/encerramento automáticos
+  em 120 s/190 s; fallback para o preview quando o Drive limita o download.
+- **Android 1.2.0:** biblioteca, coleções, pastas do Drive, player próprio e
+  suporte a vídeos locais.
+- A próxima versão do Android (1.3.0) traz o player nativo com faixas e legendas,
+  numeração absoluta dos episódios, correções de troca de tela e o menu de ações
+  por episódio.
 
 ### 1.1.0 — macOS, Windows e Android
 
@@ -168,8 +173,8 @@ informando a tag. Os arquivos são publicados automaticamente na página de Rele
 ## Estrutura
 
 ```
-DrivePlay/            app nativo macOS (Swift/SwiftUI)
-DrivePlayWindows/     app Windows (Electron)
+DrivePlay/            app macOS Swift (legado da 1.1.0)
+DrivePlayWindows/     app Electron para Windows e macOS (player nativo)
 DrivePlayAndroid/     app Android (Java/WebView)
 .github/workflows/    build e publicação das releases
 ```

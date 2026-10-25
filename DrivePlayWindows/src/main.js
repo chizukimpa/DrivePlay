@@ -11,6 +11,7 @@ const {
   shell,
   webContents,
 } = require('electron');
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -18,6 +19,7 @@ const { fetchFolder, fetchTitle } = require('./main/drive');
 const store = require('./main/store');
 const downloads = require('./main/downloads');
 const vlc = require('./main/vlc');
+const desktopMedia = require('./main/desktopMedia');
 const { buildMenu } = require('./main/menu');
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -63,6 +65,10 @@ let playerWC = null;
 let injectionTimer = null;
 let hookedPlayerID = null;
 let playerFill = false;
+let playerMode = 'preview';
+
+let mediaServer = null;
+const nativeEntries = new Map();
 
 const autoFullscreen = {
   enabled: true,
@@ -256,6 +262,10 @@ const INJECT = String.raw`
 
 function injectPlayerFrames() {
   if (!playerWC || playerWC.isDestroyed()) return;
+  if (playerMode === 'native') return;
+  try {
+    if (/\/native\/player\.html/i.test(playerWC.getURL())) return;
+  } catch (_) {}
 
   let frames = [];
   try {
@@ -308,9 +318,28 @@ function registerPlayer(id) {
   });
 }
 
+function commandNativePlayer(command) {
+  if (!playerWC || playerWC.isDestroyed()) return false;
+  let json = '';
+  try {
+    json = JSON.stringify(command || {});
+  } catch (_) {
+    return false;
+  }
+  playerWC
+    .executeJavaScript(`window.__dpNativeCmd && window.__dpNativeCmd(${json});`)
+    .catch(() => {});
+  return true;
+}
+
 function seekPlayer(time) {
   const seconds = Number(time);
-  if (!isFinite(seconds) || !playerWC || playerWC.isDestroyed()) return;
+  if (!isFinite(seconds)) return;
+  if (playerMode === 'native') {
+    commandNativePlayer({ seek: seconds });
+    return;
+  }
+  if (!playerWC || playerWC.isDestroyed()) return;
 
   let frames = [];
   try {
@@ -327,6 +356,10 @@ function seekPlayer(time) {
 
 function setPlayerFill(enabled) {
   playerFill = !!enabled;
+  if (playerMode === 'native') {
+    commandNativePlayer({ fill: playerFill });
+    return;
+  }
   if (!playerWC || playerWC.isDestroyed()) return;
 
   let frames = [];
@@ -345,6 +378,7 @@ function setPlayerFill(enabled) {
 function createWindow() {
   const isMac = process.platform === 'darwin';
   const isWin = process.platform === 'win32';
+  const testMode = process.env.DRIVEPLAY_TEST === '1';
 
   const iconPath = path.join(
     __dirname,
@@ -375,10 +409,20 @@ function createWindow() {
       sandbox: false,
       webviewTag: true,
       spellcheck: false,
+      backgroundThrottling: !testMode,
+      paintWhenInitiallyHidden: true,
     },
   });
 
-  win.once('ready-to-show', () => win.show());
+  if (testMode) {
+    try { win.webContents.setAudioMuted(true); } catch (_) {}
+    try { if (app.dock) app.dock.hide(); } catch (_) {}
+    try { win.setSkipTaskbar(true); } catch (_) {}
+  }
+
+  win.once('ready-to-show', () => {
+    if (!testMode && win && !win.isDestroyed()) win.show();
+  });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   win.on('enter-full-screen', () => {
@@ -430,6 +474,130 @@ ipcMain.handle('drive:fetchTitle', async (_event, id) => {
     return { ok: false, error: 'ID de arquivo inválido.' };
   }
   return fetchTitle(id);
+});
+
+// -------------------------------------------------- player nativo (ffmpeg)
+
+function nativeKey(seed) {
+  return crypto.createHash('sha1').update(String(seed)).digest('hex').slice(0, 20);
+}
+
+function rememberNativeEntry(key, entry) {
+  nativeEntries.set(key, { ...entry, at: Date.now() });
+  while (nativeEntries.size > 8) {
+    let oldestKey = null;
+    let oldestAt = Infinity;
+    for (const [name, value] of nativeEntries) {
+      if (name === key) continue;
+      if (value.at < oldestAt) {
+        oldestAt = value.at;
+        oldestKey = name;
+      }
+    }
+    if (!oldestKey) break;
+    nativeEntries.delete(oldestKey);
+    if (mediaServer) mediaServer.unregister(oldestKey);
+  }
+}
+
+ipcMain.handle('native:prepare', async (_event, payload) => {
+  if (!mediaServer) {
+    return { ok: false, error: 'O player nativo não está disponível neste momento.' };
+  }
+
+  const data = payload && typeof payload === 'object' ? payload : {};
+  const fileId = String(data.fileId || '').trim();
+  const title = String(data.title || '').trim();
+  if (!fileId) return { ok: false, error: 'Arquivo inválido.' };
+
+  const testMode = process.env.DRIVEPLAY_TEST === '1';
+  const localPath = testMode
+    ? String(data.localPath || process.env.DRIVEPLAY_TEST_FILE || '').trim()
+    : '';
+  const useLocal = fileId.startsWith('local:') && !!localPath && fs.existsSync(localPath);
+
+  let key;
+  let entry;
+
+  try {
+    if (useLocal) {
+      const name = path.basename(localPath);
+      key = nativeKey('local:' + localPath);
+      entry = { localPath, mime: desktopMedia.mimeFor(name), name };
+    } else {
+      if (!/^[A-Za-z0-9_-]{10,}$/.test(fileId)) {
+        return { ok: false, error: 'ID de arquivo inválido.' };
+      }
+      const resolved = await desktopMedia.resolveDrive(fileId);
+      if (resolved.error) return { ok: false, error: resolved.error };
+      key = nativeKey('drive:' + fileId);
+      const name = title || fileId;
+      const mime = /^video\//i.test(String(resolved.contentType || ''))
+        ? String(resolved.contentType)
+        : desktopMedia.mimeFor(name);
+      entry = { url: resolved.url, mime, name };
+    }
+  } catch (error) {
+    return { ok: false, error: 'Falha ao resolver o vídeo: ' + error.message };
+  }
+
+  mediaServer.register(key, entry);
+  const videoUrl = mediaServer.mediaUrl(key);
+  const tracks = await desktopMedia.probe(videoUrl, 25000);
+
+  if (tracks.error) {
+    mediaServer.unregister(key);
+    console.warn('DrivePlay: player nativo indisponível:', tracks.error);
+    return { ok: false, error: tracks.error };
+  }
+
+  rememberNativeEntry(key, { videoUrl, name: entry.name, duration: tracks.duration || 0 });
+
+  return {
+    ok: true,
+    key,
+    videoUrl,
+    duration: tracks.duration || 0,
+    videoWidth: tracks.videoWidth || 0,
+    videoHeight: tracks.videoHeight || 0,
+    audio: tracks.audio || [],
+    text: tracks.text || [],
+  };
+});
+
+ipcMain.handle('native:extract', async (event, payload) => {
+  if (!mediaServer) {
+    return { ok: false, error: 'O player nativo não está disponível neste momento.' };
+  }
+
+  const data = payload && typeof payload === 'object' ? payload : {};
+  const key = String(data.key || '');
+  const entry = nativeEntries.get(key);
+  if (!entry) {
+    return { ok: false, error: 'O vídeo não está preparado. Abra o arquivo novamente.' };
+  }
+
+  const kind = data.kind === 'audio' ? 'audio' : 'text';
+  const streamIndex = Number(data.streamIndex);
+  if (!Number.isInteger(streamIndex) || streamIndex < 0 || streamIndex > 200) {
+    return { ok: false, error: 'Faixa inválida.' };
+  }
+
+  const duration = Number(data.duration) > 0 ? Number(data.duration) : entry.duration || 0;
+  const result = await desktopMedia.extract(
+    entry.videoUrl,
+    kind,
+    streamIndex,
+    key,
+    duration,
+    (progress) => {
+      if (event.sender.isDestroyed()) return;
+      event.sender.send('native:extract-progress', { kind, streamIndex, progress });
+    }
+  );
+
+  if (result.error) return { ok: false, error: result.error };
+  return { ok: true, url: mediaServer.cacheUrl(key, result.file) };
 });
 
 ipcMain.handle('store:load', async (_event, name) => store.load(name));
@@ -508,6 +676,9 @@ ipcMain.on('menu:update', (_event, settings) => {
 });
 
 ipcMain.on('player:register', (_event, id) => registerPlayer(id));
+ipcMain.on('player:mode', (_event, mode) => {
+  playerMode = mode === 'native' ? 'native' : 'preview';
+});
 ipcMain.on('player:seek', (_event, time) => seekPlayer(time));
 ipcMain.on('player:fill', (_event, enabled) => setPlayerFill(enabled));
 ipcMain.on('player:mute', (_event, muted) => {
@@ -517,8 +688,17 @@ ipcMain.on('player:mute', (_event, muted) => {
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:launchLink', () => launchLink);
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   nativeTheme.themeSource = 'dark';
+
+  mediaServer = new desktopMedia.MediaServer();
+  try {
+    await mediaServer.start();
+  } catch (error) {
+    mediaServer = null;
+    console.error('DrivePlay: servidor de mídia indisponível:', error.message);
+  }
+
   createWindow();
   startAutoFullscreenWatcher();
 

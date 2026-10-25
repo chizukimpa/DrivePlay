@@ -2,11 +2,13 @@ package app.driveplay.mobile;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.Manifest;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -80,6 +82,7 @@ public class MainActivity extends Activity {
     private FrameLayout playerOverlay;
     private WebView playerView;
     private WebView localPlayerView;
+    private NativeVideoPlayer nativePlayer;
     private LinearLayout playerTopBar;
     private TextView playerTitleView;
     private TextView playerFillButton;
@@ -87,6 +90,10 @@ public class MainActivity extends Activity {
     private boolean playerOverlayActive;
     private boolean videoDetected;
     private boolean videoPlaying;
+    private boolean lastServicePlaying;
+    private boolean launchedWithLink;
+    private int lastDisplayId = -1;
+    private int lastChromeDisplayId = -1;
     private boolean chromeHidden;
     private boolean autoFullscreenSuppressed;
     private long lastActivity;
@@ -123,6 +130,10 @@ public class MainActivity extends Activity {
 
         handler = new Handler(Looper.getMainLooper());
         io = Executors.newSingleThreadExecutor();
+        PlaybackService.attach(this);
+        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            WebView.setWebContentsDebuggingEnabled(true);
+        }
         libraryStore = new LibraryStore(prefs());
         settingsJson = prefs().getString("settings", "{}");
         fillScreen = readFillScreen(settingsJson);
@@ -175,7 +186,18 @@ public class MainActivity extends Activity {
 
         setupAutoFullscreenLoop();
         root.requestApplyInsets();
+        root.postDelayed(new Runnable() {
+            @Override public void run() {
+                applyCoverMode();
+            }
+        }, 300);
         handleIntent(getIntent());
+        lastDisplayId = currentDisplayId();
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                restorePlayerSession();
+            }
+        }, 250);
     }
 
     // ---------------------------------------------------------------------
@@ -191,6 +213,7 @@ public class MainActivity extends Activity {
                 int right;
                 int bottom;
 
+                int imeBottom = 0;
                 if (Build.VERSION.SDK_INT >= 30) {
                     Insets bars = insets.getInsets(
                         WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout()
@@ -199,6 +222,7 @@ public class MainActivity extends Activity {
                     left = bars.left;
                     top = bars.top;
                     right = bars.right;
+                    imeBottom = ime.bottom;
                     bottom = Math.max(bars.bottom, ime.bottom);
                 } else {
                     left = insets.getSystemWindowInsetLeft();
@@ -207,11 +231,18 @@ public class MainActivity extends Activity {
                     bottom = insets.getSystemWindowInsetBottom();
                 }
 
-                if (chromeHidden) {
+                if (playerOverlay != null || chromeHidden) {
                     view.setPadding(0, 0, 0, 0);
-                } else if (view.getPaddingLeft() != left || view.getPaddingTop() != top ||
-                    view.getPaddingRight() != right || view.getPaddingBottom() != bottom) {
-                    view.setPadding(left, top, right, bottom);
+                } else {
+                    // The page handles the status/gesture bars with
+                    // env(safe-area-inset-*), so only the keyboard needs native
+                    // padding. Without this the tab bar floats above a dead
+                    // black strip on the cover display.
+                    int bottomPad = (Build.VERSION.SDK_INT < 30 || imeBottom > 0) ? bottom : 0;
+                    if (view.getPaddingLeft() != 0 || view.getPaddingTop() != 0 ||
+                        view.getPaddingRight() != 0 || view.getPaddingBottom() != bottomPad) {
+                        view.setPadding(0, 0, 0, bottomPad);
+                    }
                 }
                 return insets;
             }
@@ -219,21 +250,50 @@ public class MainActivity extends Activity {
     }
 
     private boolean isCoverScreen() {
-        Configuration configuration = getResources().getConfiguration();
-        int width = configuration.screenWidthDp;
-        int height = configuration.screenHeightDp;
-        if (width <= 0 || height <= 0) {
-            width = Math.round(getResources().getDisplayMetrics().widthPixels /
-                getResources().getDisplayMetrics().density);
-            height = Math.round(getResources().getDisplayMetrics().heightPixels /
-                getResources().getDisplayMetrics().density);
+        int width = 0;
+        int height = 0;
+        float density = getResources().getDisplayMetrics().density;
+        if (density <= 0) density = 1f;
+
+        // The activity's Configuration can lag behind the real window after a
+        // fold/unfold. The window metrics reflect the surface the WebView is
+        // actually using, which is what the CSS must match.
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                android.graphics.Rect bounds =
+                    getWindowManager().getCurrentWindowMetrics().getBounds();
+                if (bounds.width() > 0 && bounds.height() > 0) {
+                    width = Math.round(bounds.width() / density);
+                    height = Math.round(bounds.height() / density);
+                }
+            } catch (Exception ignored) {
+                // Fall back to the configuration below.
+            }
         }
-        return width <= 430 && height <= 640 && width <= height + 100;
+
+        if (width <= 0 || height <= 0) {
+            Configuration configuration = getResources().getConfiguration();
+            width = configuration.screenWidthDp;
+            height = configuration.screenHeightDp;
+        }
+        if (width <= 0 || height <= 0) {
+            android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
+            width = Math.round(metrics.widthPixels / density);
+            height = Math.round(metrics.heightPixels / density);
+        }
+        if (width <= 0 || height <= 0) return false;
+
+        // The cover panel is small and roughly square: 748x720 at 2x is about
+        // 374x360 dp (or 641x617 CSS in Samsung's cover window). The inner
+        // display is 360x880 or 880x360, so it is never square-ish.
+        boolean squareish = Math.abs(width - height) <= 280;
+        return width <= 780 && height <= 780 && squareish;
     }
 
     private void applyCoverMode() {
         coverMode = isCoverScreen();
-        String command = "window.__dpSetCover && window.__dpSetCover(" + coverMode + ");";
+        String command = "window.__dpSetCover && window.__dpSetCover(" + coverMode + ");"
+            + "window.dispatchEvent(new Event('resize'));";
         if (appView != null) {
             appView.evaluateJavascript(command, null);
         }
@@ -310,13 +370,62 @@ public class MainActivity extends Activity {
     // Player: Google Drive preview with a custom native + injected UI
     // ---------------------------------------------------------------------
 
+    private static final String SESSION_KEY = "playerSession";
+
+    private void savePlayerSession() {
+        if (TextUtils.isEmpty(currentFileId)) return;
+        try {
+            JSONObject json = new JSONObject();
+            json.put("id", currentFileId);
+            json.put("title", currentTitle);
+            json.put("playlist", playlistJson());
+            prefs().edit().putString(SESSION_KEY, json.toString()).apply();
+        } catch (Exception ignored) {
+            // Session restoration is best effort.
+        }
+    }
+
+    private void clearPlayerSession() {
+        try {
+            prefs().edit().remove(SESSION_KEY).apply();
+        } catch (Exception ignored) {
+            // Nothing to clear.
+        }
+    }
+
+    /**
+     * Reopens the last video when the activity is recreated (Samsung may
+     * restart it when the phone is folded or after a long time in background).
+     * The saved progress makes playback continue from the same spot.
+     */
+    private void restorePlayerSession() {
+        if (destroyed || isFinishing() || playerOverlay != null) return;
+        if (launchedWithLink || !TextUtils.isEmpty(pendingLink)) return;
+        String raw;
+        try {
+            raw = prefs().getString(SESSION_KEY, "");
+        } catch (Exception error) {
+            return;
+        }
+        if (TextUtils.isEmpty(raw)) return;
+        try {
+            JSONObject json = new JSONObject(raw);
+            String id = json.optString("id", "");
+            if (TextUtils.isEmpty(id)) return;
+            showPlayer(id, json.optString("title", "Vídeo do Drive"),
+                json.optString("playlist", "[]"));
+        } catch (Exception ignored) {
+            // Malformed session: start at home.
+        }
+    }
+
     private void showPlayer(String fileId, String title, String playlistJson) {
         if (TextUtils.isEmpty(fileId)) {
             toast("Link de vídeo inválido.");
             return;
         }
 
-        closePlayer();
+        closePlayer(false);
         playerIsLocal = false;
         currentFileId = fileId;
         currentTitle = cleanTitle(title, "Vídeo do Drive");
@@ -324,10 +433,92 @@ public class MainActivity extends Activity {
         playlist = parsePlaylist(playlistJson, fileId, currentTitle);
         playlistIndex = findPlaylistIndex(fileId);
 
-        buildPlayerShell();
+        LibraryInfo libraryInfo = libraryInfo(fileId);
+        if (libraryInfo != null) {
+            if (("DrivePlay".equals(currentTitle) || TextUtils.isEmpty(currentTitle))
+                && !TextUtils.isEmpty(libraryInfo.title)) {
+                currentTitle = cleanTitle(libraryInfo.title, currentTitle);
+            }
+            if (!TextUtils.isEmpty(libraryInfo.playlistJson)) {
+                playlist = parsePlaylist(libraryInfo.playlistJson, fileId, currentTitle);
+                playlistIndex = findPlaylistIndex(fileId);
+            }
+        }
+        savePlayerSession();
 
+        buildPlayerShell();
+        buildNativeVideo(fileId, currentTitle);
+        buildPlayerOverlayPage(fileId, currentTitle);
+
+        resetPlayerState();
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        addLibraryToApp(fileId, currentTitle, fileUrl(fileId));
+        requestNotificationPermission();
+        lastServicePlaying = true;
+        PlaybackService.rememberTitle(currentTitle);
+        PlaybackService.start(this, true);
+
+        String cookie = CookieManager.getInstance().getCookie("https://drive.google.com");
+        nativePlayer.open(fileId, currentTitle, cookie);
+    }
+
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < 33) return;
+        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+            == PackageManager.PERMISSION_GRANTED) return;
+        if (prefs().getBoolean("askedNotifications", false)) return;
+        prefs().edit().putBoolean("askedNotifications", true).apply();
+        try {
+            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 71);
+        } catch (Exception ignored) {
+            // The notification is optional.
+        }
+    }
+
+    /**
+     * The video is decoded natively (ExoPlayer) and the existing HTML player
+     * chrome is rendered in a transparent WebView on top of it.
+     */
+    private void buildNativeVideo(String fileId, String title) {
+        FrameLayout videoLayer = new FrameLayout(this);
+        videoLayer.setBackgroundColor(Color.BLACK);
+        playerOverlay.addView(videoLayer, match());
+
+        nativePlayer = new NativeVideoPlayer(this, videoLayer, new NativeVideoPlayer.Listener() {
+            @Override
+            public void onState(final String json) {
+                if (playerView == null || TextUtils.isEmpty(json)) return;
+                playerView.evaluateJavascript(
+                    "window.__dpNativeState && window.__dpNativeState(" + json + ");", null);
+            }
+
+            @Override
+            public void onError(final String message) {
+                // The in-page error card is enough; a native dialog would cover
+                // a perfectly playable video on transient errors.
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        if (playerOverlayActive) toast(message);
+                    }
+                });
+            }
+
+            @Override
+            public void onInfo(final String message) {
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        toast(message);
+                    }
+                });
+            }
+        });
+        nativePlayer.setFill(fillScreen);
+    }
+
+    private void buildPlayerOverlayPage(String fileId, String title) {
         playerView = new WebView(this);
         configureWebView(playerView, true);
+        playerView.setBackgroundColor(Color.TRANSPARENT);
         playerView.addJavascriptInterface(new PlayerBridge(), "PlayerBridge");
         playerView.setWebChromeClient(new PlayerChromeClient());
         playerView.setWebViewClient(new WebViewClient() {
@@ -339,23 +530,25 @@ public class MainActivity extends Activity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 if (destroyed || playerView == null) return;
-                injectDrivePlayer();
+                // From here on the HTML page owns the chrome. Keeping the
+                // native top bar around would leave only its back button on
+                // the cover display and hide the HTML menu.
+                playerOverlayActive = true;
+                if (playerTopBar != null) playerTopBar.setVisibility(View.GONE);
+                evaluatePlayerChrome(true);
+                applyCoverMode();
                 handler.postDelayed(new Runnable() {
-                    @Override public void run() { injectDrivePlayer(); }
-                }, 500);
-                handler.postDelayed(new Runnable() {
-                    @Override public void run() { injectDrivePlayer(); }
-                }, 1500);
-                handler.postDelayed(new Runnable() {
-                    @Override public void run() { injectDrivePlayer(); }
-                }, 3200);
+                    @Override public void run() {
+                        applyCoverMode();
+                    }
+                }, 300);
             }
 
             @Override
             public void onReceivedError(WebView view, WebResourceRequest request,
                                         WebResourceError error) {
                 if (request.isForMainFrame()) {
-                    showPlayerErrorDialog("Não foi possível carregar o player do Google Drive.");
+                    toast("Não foi possível abrir a interface do player.");
                 }
             }
         });
@@ -368,11 +561,73 @@ public class MainActivity extends Activity {
         });
 
         playerOverlay.addView(playerView, match());
+        playerView.loadUrl(playerPageUrl(false));
+    }
 
-        resetPlayerState();
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        addLibraryToApp(fileId, currentTitle, fileUrl(fileId));
-        playerView.loadUrl("https://drive.google.com/file/d/" + fileId + "/preview?autoplay=1");
+    private String playerPageUrl(boolean skipResume) {
+        return "file:///android_asset/player.html" +
+            "?native=1" +
+            "&id=" + Uri.encode(currentFileId) +
+            "&title=" + Uri.encode(currentTitle) +
+            "&index=" + playlistIndex +
+            "&playlist=" + Uri.encode(playlistJson()) +
+            (skipResume ? "&skipResume=1" : "");
+    }
+
+    /**
+     * Rebuilds only the HTML chrome after the window moved to another display.
+     * The native ExoPlayer keeps playing on its own surface, so this fixes a
+     * stale WebView viewport (scattered buttons) without interrupting the video.
+     */
+    private void reloadPlayerChrome() {
+        if (destroyed || playerView == null || TextUtils.isEmpty(currentFileId)) return;
+        if (playerView.getProgress() < 100) return;
+        playerOverlayActive = false;
+        playerView.setLayoutParams(match());
+        playerView.requestLayout();
+        playerView.loadUrl(playerPageUrl(true));
+    }
+
+    private void scheduleChromeReload(final int displayId) {
+        if (playerView == null || nativePlayer == null) return;
+        if (lastChromeDisplayId == displayId) return;
+        lastChromeDisplayId = displayId;
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (destroyed || playerView == null) return;
+                if (currentDisplayId() != displayId) return;
+                reloadPlayerChrome();
+            }
+        }, 220);
+    }
+
+    /** Forces the WebViews to measure again after a fold/unfold or display move. */
+    private void forceBrowserLayout() {
+        if (root != null) {
+            root.requestLayout();
+            root.invalidate();
+        }
+        FrameLayout.LayoutParams params = match();
+        if (appView != null) {
+            appView.setLayoutParams(params);
+            appView.requestLayout();
+            appView.invalidate();
+        }
+        if (playerOverlay != null) {
+            playerOverlay.requestLayout();
+            playerOverlay.invalidate();
+        }
+        if (playerView != null) {
+            playerView.setLayoutParams(match());
+            playerView.requestLayout();
+            playerView.invalidate();
+        }
+        if (localPlayerView != null) {
+            localPlayerView.setLayoutParams(match());
+            localPlayerView.requestLayout();
+            localPlayerView.invalidate();
+        }
+        if (nativePlayer != null) nativePlayer.onSizeChanged();
     }
 
     private void buildPlayerShell() {
@@ -402,21 +657,24 @@ public class MainActivity extends Activity {
         lastActivity = SystemClock.elapsedRealtime();
         if (playerTopBar != null) playerTopBar.setVisibility(View.VISIBLE);
         updateFillButton();
+        // The player is always edge-to-edge and immersive: the gesture bar must
+        // not appear when playback starts or when the user pauses.
+        if (playerOverlay != null) {
+            if (root != null) root.setPadding(0, 0, 0, 0);
+            hideSystemBars();
+        }
     }
 
     private void loadPlayerFile(String fileId, String title) {
-        currentFileId = fileId;
-        currentTitle = cleanTitle(title, "Vídeo do Drive");
-        if (playerTitleView != null) playerTitleView.setText(currentTitle);
-        playerOverlayActive = false;
-        videoDetected = false;
-        videoPlaying = false;
-        autoFullscreenSuppressed = false;
-        lastActivity = SystemClock.elapsedRealtime();
-        if (playerTopBar != null) playerTopBar.setVisibility(View.VISIBLE);
-        if (playerView != null) {
-            playerView.loadUrl("https://drive.google.com/file/d/" + fileId + "/preview?autoplay=1");
-        }
+        final String id = fileId;
+        final String name = title;
+        final String json = playlistJson();
+        handler.post(new Runnable() {
+            @Override public void run() {
+                if (destroyed) return;
+                showPlayer(id, name, json);
+            }
+        });
     }
 
     private void injectDrivePlayer() {
@@ -490,10 +748,74 @@ public class MainActivity extends Activity {
         return 0;
     }
 
+    private static final class LibraryInfo {
+        String title;
+        String playlistJson;
+    }
+
+    private static String entryTitle(JSONObject entry) {
+        String title = entry.optString("title", "");
+        if (title.isEmpty() || "DrivePlay".equals(title) || "Vídeo do Drive".equals(title)) {
+            title = entry.optString("name", title);
+        }
+        return title;
+    }
+
+    /**
+     * Finds the folder entry for a file so restores keep the original episode
+     * title and the full, ordered playlist (recents are saved with the generic
+     * "DrivePlay" title and can append duplicates at the end).
+     */
+    private LibraryInfo libraryInfo(String fileId) {
+        try {
+            JSONObject library = new JSONObject(libraryStore.load());
+            JSONArray collections = library.optJSONArray("collections");
+            if (collections == null) return null;
+            for (int c = 0; c < collections.length(); c++) {
+                JSONObject collection = collections.optJSONObject(c);
+                if (collection == null) continue;
+                JSONArray sources = collection.optJSONArray("sources");
+                if (sources == null) continue;
+                for (int s = 0; s < sources.length(); s++) {
+                    JSONObject source = sources.optJSONObject(s);
+                    if (source == null) continue;
+                    JSONArray entries = source.optJSONArray("entries");
+                    if (entries == null) continue;
+                    boolean found = false;
+                    String title = null;
+                    for (int e = 0; e < entries.length(); e++) {
+                        JSONObject entry = entries.optJSONObject(e);
+                        if (entry == null) continue;
+                        if (fileId.equals(entry.optString("id"))) {
+                            found = true;
+                            title = entryTitle(entry);
+                        }
+                    }
+                    if (!found) continue;
+                    JSONArray videos = new JSONArray();
+                    for (int e = 0; e < entries.length(); e++) {
+                        JSONObject entry = entries.optJSONObject(e);
+                        if (entry == null || !entry.optBoolean("isVideo")) continue;
+                        JSONObject item = new JSONObject();
+                        item.put("id", entry.optString("id"));
+                        item.put("title", entryTitle(entry));
+                        videos.put(item);
+                    }
+                    LibraryInfo info = new LibraryInfo();
+                    info.title = title;
+                    info.playlistJson = videos.toString();
+                    return info;
+                }
+            }
+        } catch (Exception ignored) {
+            // Fall back to the playlist passed by the page.
+        }
+        return null;
+    }
+
     private void playNext() {
         if (playlistIndex >= 0 && playlistIndex + 1 < playlist.size()) {
-            playlistIndex++;
-            MediaItem next = playlist.get(playlistIndex);
+            MediaItem next = playlist.get(playlistIndex + 1);
             addLibraryToApp(next.id, next.title, fileUrl(next.id));
             loadPlayerFile(next.id, next.title);
             toast("Próximo: " + next.title);
@@ -508,8 +830,7 @@ public class MainActivity extends Activity {
 
     private void playPrevious() {
         if (playlistIndex > 0) {
-            playlistIndex--;
-            MediaItem previous = playlist.get(playlistIndex);
+            MediaItem previous = playlist.get(playlistIndex - 1);
             addLibraryToApp(previous.id, previous.title, fileUrl(previous.id));
             loadPlayerFile(previous.id, previous.title);
             toast("Anterior: " + previous.title);
@@ -623,6 +944,9 @@ public class MainActivity extends Activity {
             localPlayerView.evaluateJavascript(
                 "window.__dpSetFill && window.__dpSetFill(" + enabled + ");", null);
         }
+        if (nativePlayer != null) {
+            nativePlayer.setFill(enabled);
+        }
     }
 
     private void persistFillScreen() {
@@ -660,11 +984,36 @@ public class MainActivity extends Activity {
 
     private void userTouched() {
         lastActivity = SystemClock.elapsedRealtime();
-        if (chromeHidden) {
+        // The HTML chrome owns the show/hide toggle. Showing it here as well
+        // would make the same tap hide it again (flash) because the gesture
+        // handler toggles the state it just received.
+        if (chromeHidden && !playerOverlayActive) {
             showChromeAndBars();
-        } else {
-            evaluatePlayerChrome(true);
         }
+    }
+
+    /** Called from the playback notification. */
+    void backgroundToggle() {
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                if (nativePlayer == null) return;
+                boolean wasPlaying = nativePlayer.isPlaying();
+                if (wasPlaying) nativePlayer.pause();
+                else nativePlayer.play();
+                videoPlaying = !wasPlaying;
+                lastServicePlaying = videoPlaying;
+                PlaybackService.updatePlaying(MainActivity.this, videoPlaying);
+            }
+        });
+    }
+
+    /** Called from the playback notification "Fechar" action. */
+    void backgroundClose() {
+        runOnUiThread(new Runnable() {
+            @Override public void run() {
+                closePlayer();
+            }
+        });
     }
 
     private void toggleChrome() {
@@ -689,8 +1038,15 @@ public class MainActivity extends Activity {
         autoFullscreenSuppressed = true;
         handler.removeCallbacks(resetAutoFullscreen);
         handler.postDelayed(resetAutoFullscreen, 12000);
-        if (root != null) root.requestApplyInsets();
-        showSystemBars();
+        if (root != null) {
+            if (playerOverlay != null) {
+                // Keep the player edge-to-edge even with the HTML controls up.
+                root.setPadding(0, 0, 0, 0);
+            } else {
+                root.requestApplyInsets();
+            }
+        }
+        if (playerOverlay == null) showSystemBars();
         evaluatePlayerChrome(true);
         lastActivity = SystemClock.elapsedRealtime();
     }
@@ -738,8 +1094,28 @@ public class MainActivity extends Activity {
     }
 
     private void closePlayer() {
+        closePlayer(true);
+    }
+
+    private void closePlayer(boolean clearSession) {
         hideCustomViewInternal();
 
+        if (!clearSession && nativePlayer != null && !TextUtils.isEmpty(currentFileId)) {
+            double position = nativePlayer.currentPositionSeconds();
+            double duration = nativePlayer.durationSeconds();
+            if (duration > 1 && position > 0) {
+                try {
+                    libraryStore.saveProgress(currentFileId, currentTitle, position, duration);
+                } catch (Exception ignored) {
+                    // The session still has a recent progress from the player.
+                }
+            }
+        }
+
+        if (nativePlayer != null) {
+            nativePlayer.destroy();
+            nativePlayer = null;
+        }
         if (playerOverlay != null) {
             root.removeView(playerOverlay);
             playerOverlay = null;
@@ -782,6 +1158,9 @@ public class MainActivity extends Activity {
         autoFullscreenSuppressed = false;
         customFullscreen = false;
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        lastServicePlaying = false;
+        PlaybackService.stop(this);
+        if (clearSession) clearPlayerSession();
         showSystemBars();
         if (root != null) root.requestApplyInsets();
         if (appView != null) {
@@ -1035,6 +1414,7 @@ public class MainActivity extends Activity {
         String clean = cleanTitle(title, currentTitle);
         if (TextUtils.isEmpty(clean)) return;
         currentTitle = clean;
+        PlaybackService.updateTitle(this, clean);
         if (playerTitleView != null) playerTitleView.setText(clean);
         if (playlistIndex >= 0 && playlistIndex < playlist.size()) {
             playlist.get(playlistIndex).title = clean;
@@ -1095,6 +1475,12 @@ public class MainActivity extends Activity {
         }
         if (localPlayerView != null) {
             localPlayerView.evaluateJavascript(
+                "window.__dpUpdateSettings && window.__dpUpdateSettings(" + settingsJson + ");",
+                null
+            );
+        }
+        if (appView != null) {
+            appView.evaluateJavascript(
                 "window.__dpUpdateSettings && window.__dpUpdateSettings(" + settingsJson + ");",
                 null
             );
@@ -1173,6 +1559,9 @@ public class MainActivity extends Activity {
     private void handleIntent(Intent intent) {
         if (intent == null) return;
         String action = intent.getAction();
+        if (Intent.ACTION_VIEW.equals(action) || Intent.ACTION_SEND.equals(action)) {
+            launchedWithLink = true;
+        }
         String link = null;
 
         if (Intent.ACTION_VIEW.equals(action) && intent.getData() != null) {
@@ -1255,18 +1644,27 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
-        if (playerView != null) {
-            playerView.onPause();
-            playerView.evaluateJavascript(
-                "window.__dpPause && window.__dpPause();", null);
-        }
-        if (localPlayerView != null) {
-            localPlayerView.onPause();
-            localPlayerView.evaluateJavascript(
-                "window.__dpPause && window.__dpPause();", null);
-        }
+        // Playback continues in the background (foreground service + wake lock),
+        // so the WebView is not paused here. It is destroyed when the player is
+        // closed, which also stops the service.
         CookieManager.getInstance().flush();
         super.onPause();
+    }
+
+    private int currentDisplayId() {
+        try {
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.view.Display display = getDisplay();
+                if (display != null) return display.getDisplayId();
+            }
+        } catch (Exception ignored) {
+            // Fall through to the deprecated API.
+        }
+        try {
+            return getWindowManager().getDefaultDisplay().getDisplayId();
+        } catch (Exception ignored) {
+            return -1;
+        }
     }
 
     @Override
@@ -1274,12 +1672,32 @@ public class MainActivity extends Activity {
         super.onResume();
         if (playerView != null) playerView.onResume();
         if (localPlayerView != null) localPlayerView.onResume();
+        int displayId = currentDisplayId();
+        if (playerOverlay != null) {
+            if (root != null) root.setPadding(0, 0, 0, 0);
+            hideSystemBars();
+            if (nativePlayer != null) {
+                if (displayId != lastDisplayId) {
+                    nativePlayer.forceSurfaceRefresh();
+                    forceBrowserLayout();
+                    scheduleChromeReload(displayId);
+                } else {
+                    nativePlayer.refreshSurface();
+                }
+            }
+        }
+        lastDisplayId = displayId;
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (!destroyed) applyCoverMode();
+            }
+        }, 260);
     }
 
     @Override
     public void onWindowFocusChanged(boolean hasFocus) {
         super.onWindowFocusChanged(hasFocus);
-        if (hasFocus && chromeHidden) {
+        if (hasFocus && (chromeHidden || playerOverlay != null)) {
             if (root != null) root.setPadding(0, 0, 0, 0);
             hideSystemBars();
         }
@@ -1290,6 +1708,10 @@ public class MainActivity extends Activity {
         super.onConfigurationChanged(newConfig);
         if (root != null) root.requestApplyInsets();
         applyCoverMode();
+        forceBrowserLayout();
+
+        int displayId = currentDisplayId();
+        boolean displayChanged = displayId != lastDisplayId;
         if (playerView != null) {
             playerView.evaluateJavascript(
                 "window.__dpResize && window.__dpResize();", null);
@@ -1298,6 +1720,23 @@ public class MainActivity extends Activity {
             localPlayerView.evaluateJavascript(
                 "window.__dpResize && window.__dpResize();", null);
         }
+        if (nativePlayer != null) {
+            if (displayChanged) nativePlayer.forceSurfaceRefresh();
+            else nativePlayer.refreshSurface();
+            nativePlayer.onSizeChanged();
+        }
+        if (displayChanged) {
+            scheduleChromeReload(displayId);
+            handler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    if (destroyed) return;
+                    applyCoverMode();
+                    forceBrowserLayout();
+                    if (nativePlayer != null) nativePlayer.onSizeChanged();
+                }
+            }, 260);
+        }
+        lastDisplayId = displayId;
     }
 
     @Override
@@ -1307,7 +1746,9 @@ public class MainActivity extends Activity {
             if (autoFullscreenLoop != null) handler.removeCallbacks(autoFullscreenLoop);
             handler.removeCallbacksAndMessages(null);
         }
-        closePlayer();
+        closePlayer(isFinishing());
+        PlaybackService.detach(this);
+        PlaybackService.stop(this);
         if (io != null) io.shutdownNow();
         if (appView != null) {
             appView.destroy();
@@ -1364,10 +1805,9 @@ public class MainActivity extends Activity {
             hideCustomViewInternal();
         }
 
-        @Override
-        public void onReceivedTitle(WebView view, String title) {
-            updateTitle(title);
-        }
+        // Do not mirror the WebView's <title> here: player.html is always
+        // titled "DrivePlay" and overwriting the media title corrupted the
+        // title and the playlist after a chrome reload (fold/unfold).
     }
 
     // ---------------------------------------------------------------------
@@ -1420,7 +1860,13 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void fetchFolder(final String id) {
-            fetchFolder(id);
+            MainActivity.this.fetchFolder(id);
+        }
+
+        @JavascriptInterface
+        public String probeMedia(String id) {
+            String cookie = CookieManager.getInstance().getCookie("https://drive.google.com");
+            return DriveMedia.probeJson(id, cookie);
         }
 
         @JavascriptInterface
@@ -1494,6 +1940,11 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void setWatched(String id, boolean watched) {
+            libraryStore.setWatched(id, watched);
+        }
+
+        @JavascriptInterface
         public void clearLibrary() {
             libraryStore.clear();
             if (appView != null) {
@@ -1514,6 +1965,29 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String getSettings() {
             return settingsJson;
+        }
+
+        /** Merges a partial settings object (subtitle style, skip toggles). */
+        @JavascriptInterface
+        public void saveSettings(final String partialJson) {
+            if (partialJson == null || partialJson.isEmpty()) return;
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        JSONObject merged = new JSONObject(settingsJson);
+                        JSONObject patch = new JSONObject(partialJson);
+                        java.util.Iterator<String> keys = patch.keys();
+                        while (keys.hasNext()) {
+                            String key = keys.next();
+                            merged.put(key, patch.get(key));
+                        }
+                        applySettings(merged.toString());
+                    } catch (Exception ignored) {
+                        // Keep the current settings if the patch is malformed.
+                    }
+                }
+            });
         }
 
         @JavascriptInterface
@@ -1555,6 +2029,10 @@ public class MainActivity extends Activity {
                     }
                     videoDetected = hasVideo;
                     videoPlaying = hasVideo && !paused && !ended;
+                    if (playerOverlay != null && videoPlaying != lastServicePlaying) {
+                        lastServicePlaying = videoPlaying;
+                        PlaybackService.updatePlaying(MainActivity.this, videoPlaying);
+                    }
                     if (ended) {
                         videoPlaying = false;
                         showChromeAndBars();
@@ -1595,11 +2073,7 @@ public class MainActivity extends Activity {
             runOnUiThread(new Runnable() {
                 @Override
                 public void run() {
-                    if (!playerOverlayActive) {
-                        showPlayerErrorDialog(message);
-                    } else {
-                        MainActivity.this.toast(message);
-                    }
+                    MainActivity.this.toast(message);
                 }
             });
         }
@@ -1643,6 +2117,127 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public boolean getFill() {
             return fillScreen;
+        }
+
+        @JavascriptInterface
+        public void nativePlay() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (nativePlayer != null) nativePlayer.play();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void nativePause() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (nativePlayer != null) nativePlayer.pause();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void nativeSeek(final double seconds) {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (nativePlayer != null) nativePlayer.seekTo(seconds);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void nativeRate(final double rate) {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (nativePlayer != null) nativePlayer.setRate(rate);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void nativeAudio(final int index) {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (nativePlayer != null) nativePlayer.selectAudio(index);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void nativeText(final int index) {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (nativePlayer != null) nativePlayer.selectText(index);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void nativeFill(final boolean enabled) {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (nativePlayer != null) nativePlayer.setFill(enabled);
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void nativeStop() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (nativePlayer != null) {
+                        nativePlayer.destroy();
+                        nativePlayer = null;
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void nativePing() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (nativePlayer != null) nativePlayer.refresh();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void nativeLog(String message) {
+            android.util.Log.d("DrivePlay", "player " + (message == null ? "" : message));
+        }
+
+        @JavascriptInterface
+        public void nativeDetect() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (nativePlayer != null) nativePlayer.detectNow();
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void nativeOverlayVisible(final boolean visible) {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (playerView != null) {
+                        playerView.setVisibility(visible ? View.VISIBLE : View.GONE);
+                    }
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void nativeRetry() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    if (nativePlayer == null || TextUtils.isEmpty(currentFileId)) return;
+                    String cookie = CookieManager.getInstance()
+                        .getCookie("https://drive.google.com");
+                    nativePlayer.open(currentFileId, currentTitle, cookie);
+                }
+            });
         }
 
         @JavascriptInterface

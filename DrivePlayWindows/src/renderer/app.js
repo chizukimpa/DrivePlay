@@ -73,6 +73,7 @@ const state = {
   recents: { folders: [], items: [] },
   progress: {},
   settings: { ...DEFAULT_SETTINGS },
+  playerMode: 'native',
   player: {
     hasVideo: false,
     isReady: false,
@@ -600,8 +601,8 @@ function bindSettingsPopover(popover) {
       const key = button.dataset.step;
       const delta = Number(button.dataset.delta);
       const ranges = {
-        introSeconds: { min: 5, max: 300, fallback: 90 },
-        endingSeconds: { min: 30, max: 600, fallback: 180 },
+        introSeconds: { min: 5, max: 300, fallback: 120 },
+        endingSeconds: { min: 30, max: 600, fallback: 190 },
       };
       const range = ranges[key];
       if (!range) return;
@@ -1351,7 +1352,7 @@ function renderFooter() {
   const footer = $('#footer');
   if (!footer) return;
 
-  if (!state.currentID) {
+  if (!state.currentID || state.playerMode === 'native') {
     footer.classList.add('hidden');
     footer.innerHTML = '';
     return;
@@ -1474,6 +1475,7 @@ function updateSkipButtons() {
   if (!intro || !ending || !container) return;
 
   const base =
+    state.playerMode !== 'native' &&
     state.settings.showSkipButtons &&
     !!state.currentID &&
     state.player.hasVideo &&
@@ -1765,6 +1767,39 @@ function selectEntry(entry) {
   api.openExternal(fileViewURL(entry.id));
 }
 
+function nativePlaylistPayload(id, title) {
+  const list = playlistEntries()
+    .filter((entry) => entry && entry.id && entry.isVideo !== false)
+    .map((entry) => ({ id: entry.id, title: entry.name || entry.id }));
+
+  let index = list.findIndex((item) => item.id === id);
+  if (index === -1) {
+    list.unshift({ id, title: title || 'Vídeo do Drive' });
+    index = 0;
+  }
+  return { playlist: list, index };
+}
+
+function nativePlayerSettings() {
+  const settings = state.settings;
+  return {
+    skipIntro: !!settings.skipIntro,
+    introSeconds: settings.introSeconds,
+    skipEnding: !!settings.skipEnding,
+    endingSeconds: settings.endingSeconds,
+    autoNext: !!settings.autoNext,
+    resumePlayback: !!settings.resumePlayback,
+    autoFullscreen: !!settings.autoFullscreen,
+    fillScreen: !!settings.fillScreen,
+    showSkipButtons: !!settings.showSkipButtons,
+    subtitleSize: settings.subtitleSize,
+    subtitleColor: settings.subtitleColor,
+    subtitleOutline: settings.subtitleOutline,
+    subtitleFont: settings.subtitleFont,
+    subtitleBackground: settings.subtitleBackground,
+  };
+}
+
 async function openFile(id, title = '') {
   if (!id) return;
 
@@ -1804,7 +1839,17 @@ async function openFile(id, title = '') {
   const input = $('#link-input');
   if (input && document.activeElement === input) input.blur();
 
-  loadPlayer(id);
+  state.playerMode = 'native';
+  const queue = nativePlaylistPayload(id, state.currentTitle);
+  loadPlayer(id, {
+    mode: 'native',
+    title: state.currentTitle,
+    settings: nativePlayerSettings(),
+    playlist: queue.playlist,
+    index: queue.index,
+    resume: state.resumeTarget || 0,
+    fill: state.settings.fillScreen,
+  });
   renderAll();
 
   try {
@@ -2209,6 +2254,10 @@ function handlePlayerLoading(loading) {
     state.isLoading = false;
     return;
   }
+  if (!loading && state.playerMode === 'native' && !state.player.isReady) {
+    // O player nativo avisa quando o vídeo está pronto (evento "ready").
+    return;
+  }
   state.isLoading = !!loading;
   updatePlayerOverlays();
   updateSkipButtons();
@@ -2221,6 +2270,150 @@ function handlePlayerError(message) {
   updatePlayerOverlays();
   updateSkipButtons();
   syncAutoFullscreen();
+}
+
+function closeCurrentPlayer() {
+  if (state.currentID && state.player.duration > 1) {
+    recordProgress(state.currentID, state.player.currentTime, state.player.duration);
+  }
+
+  state.currentID = null;
+  state.currentTitle = '';
+  state.errorMessage = null;
+  state.isLoading = false;
+  state.playerMode = 'native';
+  state.player.hasVideo = false;
+  state.player.isReady = false;
+  state.player.duration = 0;
+  state.player.currentTime = 0;
+  state.player.isPlaying = false;
+  state.player.hasEnded = false;
+  state.resumeTarget = null;
+  state.didResume = false;
+  state.didSkipIntro = false;
+  state.didAdvance = false;
+
+  stopPlayer();
+  syncAutoFullscreen();
+  renderAll();
+}
+
+function mergeNativeSettings(patch) {
+  if (!patch || typeof patch !== 'object') return;
+
+  const allowed = new Set([
+    'skipIntro',
+    'introSeconds',
+    'skipEnding',
+    'endingSeconds',
+    'autoNext',
+    'resumePlayback',
+    'autoFullscreen',
+    'fillScreen',
+    'showSkipButtons',
+    'subtitleSize',
+    'subtitleColor',
+    'subtitleOutline',
+    'subtitleFont',
+    'subtitleBackground',
+  ]);
+
+  let changed = false;
+  for (const key of Object.keys(patch)) {
+    if (!allowed.has(key)) continue;
+    const value = patch[key];
+    if (value == null) continue;
+    state.settings[key] = value;
+    changed = true;
+  }
+  if (!changed) return;
+
+  persistSettings();
+  updateSkipSettingsButton();
+  updateSkipButtons();
+}
+
+function handleNativeEvent(event) {
+  if (!event || typeof event !== 'object') return;
+  const type = event.type;
+  const data = event.data && typeof event.data === 'object' ? event.data : {};
+  if (!state.currentID) return;
+
+  switch (type) {
+    case 'ready':
+      state.isLoading = false;
+      state.playerMode = 'native';
+      state.player.hasVideo = data.hasVideo !== false;
+      state.player.isReady = true;
+      if (Number(data.duration) > 1) state.player.duration = Number(data.duration);
+      state.didResume = true;
+      updatePlayerOverlays();
+      updateSkipButtons();
+      syncAutoFullscreen();
+      break;
+
+    case 'progress': {
+      if (data.id && data.id !== state.currentID) return;
+      const duration = Number(data.duration) || state.player.duration;
+      const time = Number(data.time) || 0;
+      if (duration > 1) state.player.duration = duration;
+      state.player.currentTime = time;
+      recordProgress(state.currentID, time, duration);
+      break;
+    }
+
+    case 'fill':
+      state.settings.fillScreen = !!data.enabled;
+      persistSettings();
+      break;
+
+    case 'settings':
+      mergeNativeSettings(data);
+      break;
+
+    case 'previous': {
+      const previous = adjacentEntry(-1, false);
+      if (previous) playEntry(previous);
+      break;
+    }
+
+    case 'next': {
+      const next = adjacentEntry(1, false);
+      if (next) playEntry(next);
+      else showToast('Fim da lista de episódios.');
+      break;
+    }
+
+    case 'external':
+      openInBrowser(state.currentID);
+      break;
+
+    case 'close':
+      closeCurrentPlayer();
+      break;
+
+    case 'failed': {
+      if (state.playerMode !== 'native') break;
+      const id = state.currentID;
+      const reason = String(data.error || '');
+      state.playerMode = 'preview';
+      state.isLoading = true;
+      state.errorMessage = null;
+      state.player.hasVideo = false;
+      state.player.isReady = false;
+      loadPlayer(id, { mode: 'preview' });
+      showToast(
+        /limite|quota|downloads/i.test(reason)
+          ? 'O Drive atingiu o limite de downloads — usando o player do Drive.'
+          : 'Reproduzindo no player do Drive (compatibilidade).'
+      );
+      renderAll();
+      break;
+    }
+
+    default:
+      break;
+  }
 }
 
 function handlePlayerTick(payload) {
@@ -3414,11 +3607,21 @@ async function init() {
     onTick: handlePlayerTick,
     onLoading: handlePlayerLoading,
     onError: handlePlayerError,
+    onNativeEvent: handleNativeEvent,
     onFullscreen: (value) => {
       applyFullscreenState(value);
       api.setFullscreen(!!value);
     },
   });
+
+  if (api.testMode) {
+    window.__driveplayTest = {
+      openFile,
+      openFolder,
+      closeCurrentPlayer,
+      state,
+    };
+  }
 
   bindStaticEvents();
 

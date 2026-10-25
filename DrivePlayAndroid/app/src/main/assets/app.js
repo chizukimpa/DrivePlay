@@ -5,14 +5,21 @@
   var SETTINGS_KEY = "driveplay.android.settings.v3";
 
   var DEFAULTS = {
-    skipIntro: true,
+    skipIntro: false,
     introSeconds: 120,
-    skipEnding: true,
+    skipEnding: false,
     endingSeconds: 190,
     autoFullscreen: true,
     autoNext: true,
     resumePlayback: true,
-    fillScreen: false
+    fillScreen: false,
+    autoSkipVersion: 0,
+    subtitleVersion: 0,
+    subtitleSize: 1.3,
+    subtitleColor: "#ffffff",
+    subtitleOutline: true,
+    subtitleFont: "sans",
+    subtitleBackground: true
   };
 
   var state = {
@@ -29,7 +36,8 @@
     pendingFetch: {},
     fetches: {},
     toastTimer: null,
-    renderTimer: null
+    renderTimer: null,
+    suppressPlayClick: false
   };
 
   /* ------------------------------------------------------------- helpers */
@@ -103,6 +111,195 @@
     return value;
   }
 
+  /* ---------------------------------------------------- media title parser */
+
+  var MEDIA_TAGS = /\b(?:2160p|1440p|1080p|1080i|720p|576p|480p|360p|4k|8k|uhd|hdr10\+?|hdr|dolby\s*vision|dovi|sdr|blu-?ray|bd-?rip|br-?rip|bdremux|remux|web-?dl|webrip|web-?hd|hdtv|dvd-?rip|dvd|hdrip|camrip|amzn|dsnp|disney\+?|hmax|atvp|appletv|pcok|x264|x265|h\.?264|h\.?265|hevc|avc|av1|vp9|10bit|8bit|aac(?:\s*2\.0)?|ac3|eac3|ddp?5\.1|dts(?:-hd|[- ]?x)?|truehd|atmos|flac|opus|mp3|5\.1|7\.1|2\.0|dual\s*audio|multi\s*audio|audio\s*surround|surround|dublado|legendado|temporada|season|epis[oó]dio|episode|ep)\b/gi;
+
+  function pad2(value) {
+    return value < 10 ? "0" + value : String(value);
+  }
+
+  function smartTitleCase(value) {
+    var letters = value.replace(/[^A-Za-zÀ-ÿ]/g, "");
+    if (!letters) return value;
+    var allUpper = letters === letters.toUpperCase();
+    var allLower = letters === letters.toLowerCase();
+    if (!allUpper && !allLower) return value;
+    return value.toLowerCase().replace(/(^|[\s\-–—])([a-zà-ÿ])/g, function (_match, separator, letter) {
+      return separator + letter.toUpperCase();
+    });
+  }
+
+  function parseMediaName(raw) {
+    var input = String(raw || "").trim();
+    if (!input) return { label: "", series: "", season: null, episode: null, absolute: null };
+    input = input.replace(/\.[a-z0-9]{2,5}$/i, "");
+    var text = input.replace(/_+/g, " ").replace(/\s+/g, " ").trim();
+
+    var season = null;
+    var episode = null;
+    var absolute = null;
+    var cut = -1;
+    var match;
+
+    if ((match = text.match(/\bS(?:eason)?\s*0?(\d{1,2})\s*[.\-_ ]?\s*E(?:p(?:isode)?|pis[oó]dio)?\s*0?(\d{1,4})\b/i))) {
+      season = parseInt(match[1], 10);
+      episode = parseInt(match[2], 10);
+      cut = match.index;
+    } else if ((match = text.match(/\bS(?:eason)?\s*0?(\d{1,2})\s*[\-._ ]\s*0?(\d{1,4})\b/i))) {
+      season = parseInt(match[1], 10);
+      episode = parseInt(match[2], 10);
+      cut = match.index;
+    } else if ((match = text.match(/\b(\d{1,2})x(\d{1,4})\b/i))) {
+      season = parseInt(match[1], 10);
+      episode = parseInt(match[2], 10);
+      cut = match.index;
+    } else if ((match = text.match(/\b(?:Season|Temporada)\s*0?(\d{1,2})\b/i))) {
+      season = parseInt(match[1], 10);
+      cut = match.index;
+    } else if ((match = text.match(/\b0?(\d{1,2})\s*[ªa]\s*Temporada\b/i))) {
+      season = parseInt(match[1], 10);
+      cut = match.index;
+    } else if ((match = text.match(/\b(?:Episode|Epis[oó]dio|Ep)\s*\.?\s*0?(\d{1,4})\b/i))) {
+      episode = parseInt(match[1], 10);
+      cut = match.index;
+    } else if ((match = text.match(/\bE\s*0?(\d{1,4})\b/i))) {
+      episode = parseInt(match[1], 10);
+      cut = match.index;
+    } else if ((match = text.match(/(?:^|[\s._-])-\s*0?(\d{1,4})(?=\s|$|\[|\(|\.)/i))) {
+      episode = parseInt(match[1], 10);
+      cut = match.index;
+    } else {
+      match = text.match(/(?:^|[\s._-])(\d{1,4})$/);
+      if (match) {
+        var number = parseInt(match[1], 10);
+        var isResolution = [360, 480, 576, 720, 1080, 1440, 2160].indexOf(number) >= 0;
+        var isYear = number >= 1900 && number <= 2099;
+        if (!isResolution && !isYear && text.slice(0, match.index).trim().length >= 3) {
+          episode = number;
+          cut = match.index;
+        }
+      }
+    }
+
+    var seriesPart = cut >= 0 ? text.slice(0, cut) : text;
+
+    if (season != null && episode == null && match) {
+      var rest = text.slice(match.index + match[0].length);
+      var epMatch = rest.match(/(?:^|[\s._-])(?:E|Ep|Epis[oó]dio|Episode)?\s*\.?\s*0?(\d{1,4})(?=\s|$|\[|\()/i);
+      if (epMatch) {
+        var candidate = parseInt(epMatch[1], 10);
+        var notResolution = [360, 480, 576, 720, 1080, 1440, 2160].indexOf(candidate) < 0;
+        if (candidate > 0 && notResolution) episode = candidate;
+      }
+    }
+
+    // "Bleach S04E13 (76)": the number in parentheses is the absolute
+    // episode across every season. Keep it in the title, but never treat a
+    // resolution or a year as an episode number.
+    var absoluteMatch = text.match(/\(\s*(\d{1,4})\s*\)|\[\s*(\d{1,4})\s*\]/);
+    if (absoluteMatch) {
+      var absoluteNumber = parseInt(absoluteMatch[1] || absoluteMatch[2], 10);
+      var absoluteResolution = [360, 480, 576, 720, 1080, 1440, 2160].indexOf(absoluteNumber) >= 0;
+      var absoluteYear = absoluteNumber >= 1900 && absoluteNumber <= 2099;
+      if (absoluteNumber > 0 && !absoluteResolution && !absoluteYear) {
+        if (season != null && episode != null && absoluteNumber >= episode) {
+          absolute = absoluteNumber;
+        } else if (season == null && episode == null) {
+          episode = absoluteNumber;
+          absolute = absoluteNumber;
+        }
+      }
+    }
+
+    var series = seriesPart
+      .replace(/\[[^\]]*\]/g, " ")
+      .replace(/\([^)]*\)/g, " ")
+      .replace(MEDIA_TAGS, " ")
+      .replace(/[._]+/g, " ")
+      .replace(/\s*[-–—]\s*/g, " ")
+      .replace(/^\s*\d{1,3}\s*[-–—]?\s+/, "")
+      .replace(/\s+/g, " ")
+      .replace(/^[\s\-–—:]+|[\s\-–—:]+$/g, "")
+      .trim();
+
+    series = smartTitleCase(series);
+    if (!series) series = smartTitleCase(cleanTitle(text, "Vídeo do Drive"));
+
+    var label = series;
+    if (season != null && episode != null) {
+      label += " S" + pad2(season) + "E" + pad2(episode);
+      if (absolute != null) label += " (" + absolute + ")";
+    } else if (season != null) {
+      label += " S" + pad2(season);
+    } else if (episode != null) {
+      label += " E" + pad2(episode);
+    }
+
+    return {
+      label: label,
+      series: series,
+      season: season,
+      episode: episode,
+      absolute: absolute
+    };
+  }
+
+  function isGenericFolder(name) {
+    return /^(minha biblioteca|google drive|recentes|driveplay|pasta do drive|vídeos?)$/i.test(String(name || "").trim());
+  }
+
+  function formatMediaTitle(raw, folder) {
+    var parsed = parseMediaName(raw);
+    var label = parsed.label || cleanTitle(raw, "Vídeo do Drive");
+    var suffix = String(folder || "").trim();
+    if (suffix && !isGenericFolder(suffix)) {
+      label += " • " + suffix;
+    }
+    return label;
+  }
+
+  function folderLabel(name) {
+    var clean = cleanTitle(name, "");
+    if (!clean || isGenericFolder(clean)) return "";
+    var parsed = parseMediaName(clean);
+    if (parsed.series && (parsed.season != null || parsed.episode != null)) return parsed.series;
+    return parsed.series || clean;
+  }
+
+  function refreshLibraryTitles() {
+    if (!state.library) return;
+    try {
+      (state.library.collections || []).forEach(function (collection) {
+        (collection.sources || []).forEach(function (source) {
+          (source.entries || []).forEach(function (entry) {
+            if (!entry.isVideo) return;
+            entry.title = formatMediaTitle(entry.name, collection.name);
+          });
+        });
+      });
+      var recents = state.library.recents && state.library.recents.items;
+      if (recents) {
+        recents.forEach(function (item) {
+          var found = findEntry(item.id);
+          if (found) item.title = formatMediaTitle(found.entry.name, found.collection.name);
+        });
+      }
+    } catch (error) {
+      /* The library may not be fully loaded yet. */
+    }
+  }
+
+  function mediaTitleFor(id, fallbackRaw, folderOverride) {
+    var found = findEntry(id);
+    var raw = found && found.entry && found.entry.name ? found.entry.name : (fallbackRaw || "");
+    var folder = folderOverride != null
+      ? folderOverride
+      : (found && found.collection ? found.collection.name : "");
+    if (!raw) return cleanTitle(fallbackRaw, "Vídeo do Drive");
+    return formatMediaTitle(raw, folder);
+  }
+
   function storageGet(key, fallback) {
     try {
       var raw = window.localStorage.getItem(key);
@@ -147,6 +344,18 @@
     settings.fillScreen = source.fillScreen === true;
     settings.introSeconds = clampNumber(source.introSeconds, 120, 0, 3600);
     settings.endingSeconds = clampNumber(source.endingSeconds, 190, 0, 3600);
+    settings.autoSkipVersion = clampNumber(source.autoSkipVersion, 0, 0, 99);
+    var cueSize = Number(source.subtitleSize);
+    settings.subtitleSize = isFinite(cueSize)
+      ? Math.min(2.4, Math.max(0.7, cueSize))
+      : 1.3;
+    settings.subtitleColor = /^#[0-9a-f]{6}$/i.test(String(source.subtitleColor || ""))
+      ? String(source.subtitleColor) : "#ffffff";
+    settings.subtitleOutline = source.subtitleOutline !== false;
+    settings.subtitleFont = ["sans", "serif", "mono"].indexOf(source.subtitleFont) >= 0
+      ? source.subtitleFont : "sans";
+    settings.subtitleBackground = source.subtitleBackground !== false;
+    settings.subtitleVersion = clampNumber(source.subtitleVersion, 0, 0, 99);
     return settings;
   }
 
@@ -186,6 +395,7 @@
     return {
       id: id,
       name: name,
+      title: String(raw.title || "").trim(),
       isFolder: raw.isFolder === true,
       isVideo: raw.isVideo === true && raw.isFolder !== true,
       modified: raw.modified ? String(raw.modified) : "",
@@ -295,6 +505,7 @@
   }
 
   function saveLibrary(now) {
+    refreshLibraryTitles();
     storageSet(LIBRARY_KEY, state.library);
     var push = function () {
       if (window.Android && typeof window.Android.saveLibrary === "function") {
@@ -375,6 +586,10 @@
 
     var sourceID = kind + ":" + driveID;
     var normalized = (entries || []).map(normalizeEntry).filter(Boolean);
+    normalized.forEach(function (entry) {
+      if (!entry.isVideo) return;
+      entry.title = formatMediaTitle(entry.name, collection.name);
+    });
     var existing = null;
     for (var i = 0; i < collection.sources.length; i++) {
       if (collection.sources[i].id === sourceID) {
@@ -808,11 +1023,13 @@
           : 0;
         return '<button class="continue-card" type="button" data-play-id="' +
           escapeHtml(item.id) + '">' +
+          '<span class="ep-menu" data-menu-id="' + escapeHtml(item.id) +
+            '" role="button" tabindex="0" aria-label="Opções do vídeo">⋮</span>' +
           '<div class="cc-cover"' + (thumb ? ' style="background-image:url(' + escapeHtml(thumb) + ')"' : '') + '>' +
             (thumb ? '' : PLAY_SVG) +
           '</div>' +
           '<div class="cc-body">' +
-            '<strong>' + escapeHtml(cleanTitle(item.title, "Vídeo do Drive")) + '</strong>' +
+            '<strong>' + escapeHtml(mediaTitleFor(item.id, item.title)) + '</strong>' +
             '<span>' + formatTime(item.progress.time) + ' de ' + formatTime(item.progress.duration) + '</span>' +
             '<div class="ep-progress"><i style="width:' + percent + '%"></i></div>' +
           '</div>' +
@@ -838,10 +1055,12 @@
       rows.push(
         '<button class="row" type="button" data-play-id="' + escapeHtml(item.id) + '">' +
           (entry ? thumbHtml(entry) : '<div class="thumb">' + PLAY_SVG + '</div>') +
-          '<div class="row-main"><strong>' + escapeHtml(cleanTitle(item.title, "Vídeo do Drive")) + '</strong>' +
+          '<div class="row-main"><strong>' + escapeHtml(mediaTitleFor(item.id, item.title)) + '</strong>' +
             '<span>' + (percent > 0 ? formatTime(progressFor(item.id).time) + ' assistidos' : 'Vídeo do Drive') + '</span>' +
             (percent > 0 ? '<div class="ep-progress"><i style="width:' + percent + '%"></i></div>' : '') +
           '</div>' +
+          '<span class="ep-menu" data-menu-id="' + escapeHtml(item.id) +
+            '" role="button" tabindex="0" aria-label="Opções do vídeo">⋮</span>' +
           '<div class="row-end">' + PLAY_SVG + '</div>' +
         '</button>'
       );
@@ -880,17 +1099,22 @@
     '</span>';
   }
 
-  function episodeRowHtml(entry) {
+  function episodeRowHtml(entry, collectionName) {
     var progress = progressFor(entry.id);
     var percent = progressPercent(entry.id);
     var watched = !!(progress && progress.watched);
+    var display = entry.name
+      ? formatMediaTitle(entry.name, collectionName)
+      : (entry.title || "Vídeo do Drive");
     return '<button class="episode" type="button" data-play-id="' + escapeHtml(entry.id) + '">' +
       '<div class="ep-main">' +
-        '<strong>' + escapeHtml(entry.name) + '</strong>' +
+        '<strong>' + escapeHtml(display) + '</strong>' +
         '<span>' + escapeHtml(entryMeta(entry)) + '</span>' +
         (percent > 0 && !watched ? '<div class="ep-progress"><i style="width:' + percent + '%"></i></div>' : '') +
         (watched ? '<span class="ep-badge">Assistido</span>' : '') +
       '</div>' +
+      '<span class="ep-menu" data-menu-id="' + escapeHtml(entry.id) +
+        '" role="button" tabindex="0" aria-label="Opções do episódio">⋮</span>' +
       '<span class="ep-play">' + PLAY_SVG + '</span>' +
     '</button>';
   }
@@ -910,7 +1134,9 @@
       return sourceChipHtml(collection, source);
     }).join("");
 
-    $("#episodeList").innerHTML = episodes.map(episodeRowHtml).join("");
+    $("#episodeList").innerHTML = episodes.map(function (entry) {
+      return episodeRowHtml(entry, collection.name);
+    }).join("");
     $("#playAllBtn").disabled = episodes.length === 0;
 
     var empty = $("#collectionEmpty");
@@ -978,19 +1204,25 @@
 
     var display = folderDisplayEntries(folder.entries);
     list.hidden = false;
+    var folderSuffix = folderLabel(folder.title);
     list.innerHTML = display.map(function (entry) {
+      var displayName = entry.isFolder
+        ? entry.name
+        : formatMediaTitle(entry.name, folderSuffix);
       if (entry.isFolder) {
         return '<button class="row" type="button" data-entry="' + escapeHtml(entry.id) + '">' +
           thumbHtml(entry) +
-          '<div class="row-main"><strong>' + escapeHtml(entry.name) + '</strong>' +
+          '<div class="row-main"><strong>' + escapeHtml(displayName) + '</strong>' +
             '<span>' + escapeHtml(entryMeta(entry)) + '</span></div>' +
           '<div class="row-end">' + CHEVRON_SVG + '</div>' +
         '</button>';
       }
       return '<button class="row" type="button" data-entry="' + escapeHtml(entry.id) + '">' +
         thumbHtml(entry) +
-        '<div class="row-main"><strong>' + escapeHtml(entry.name) + '</strong>' +
+        '<div class="row-main"><strong>' + escapeHtml(displayName) + '</strong>' +
           '<span>' + escapeHtml(entryMeta(entry)) + '</span></div>' +
+        '<span class="ep-menu" data-menu-id="' + escapeHtml(entry.id) +
+          '" role="button" tabindex="0" aria-label="Opções do vídeo">⋮</span>' +
         '<div class="row-end">' + PLAY_SVG + '</div>' +
       '</button>';
     }).join("");
@@ -1074,10 +1306,12 @@
     options = options || {};
 
     var found = findEntry(id);
-    var name = cleanTitle(
-      title || (found && found.entry.name) || recentTitle(id) || "Vídeo do Drive",
-      "Vídeo do Drive"
-    );
+    var folderName = found && found.collection ? found.collection.name : "";
+    var rawName = (found && found.entry && found.entry.name)
+      || title || recentTitle(id) || "";
+    var name = rawName
+      ? formatMediaTitle(rawName, folderName)
+      : cleanTitle(title, "Vídeo do Drive");
 
     if (String(id).indexOf("local:") === 0) {
       addRecentFile(id, name);
@@ -1108,11 +1342,13 @@
 
     var hasCurrent = false;
     playlist = playlist.map(function (entry) {
-      var entryName = cleanTitle(entry.title || entry.name || "Vídeo do Drive", "Vídeo do Drive");
       if (entry.id === id) {
         hasCurrent = true;
         return { id: id, title: name };
       }
+      var entryName = entry.name
+        ? formatMediaTitle(entry.name, folderName)
+        : cleanTitle(entry.title || "Vídeo do Drive", "Vídeo do Drive");
       return { id: entry.id, title: entryName };
     });
     if (!hasCurrent) playlist.unshift({ id: id, title: name });
@@ -1313,7 +1549,8 @@
       for (var s = 0; s < sources.length; s++) {
         for (var e = 0; e < sources[s].entries.length; e++) {
           if (sources[s].entries[e].id === id) {
-            sources[s].entries[e].name = nice;
+            // Keep the raw file name so the title can be regenerated.
+            sources[s].entries[e].title = nice;
           }
         }
       }
@@ -1476,6 +1713,84 @@
         closeDialog();
         resolve(value || null);
       };
+    });
+  }
+
+  function episodeDisplayTitle(id) {
+    var found = findEntry(id);
+    if (found && found.entry) {
+      return formatMediaTitle(found.entry.name, found.collection.name);
+    }
+    if (state.folder && Array.isArray(state.folder.entries)) {
+      for (var i = 0; i < state.folder.entries.length; i++) {
+        if (state.folder.entries[i].id === id) {
+          return formatMediaTitle(state.folder.entries[i].name, folderLabel(state.folder.title));
+        }
+      }
+    }
+    return mediaTitleFor(id, "");
+  }
+
+  function markEntryWatched(id, watched) {
+    if (!id) return;
+    var item = state.library.progress[id] || { time: 0, duration: 0, watched: false };
+    item.watched = !!watched;
+    if (watched) {
+      if (item.duration > 0) item.time = item.duration;
+    } else if (item.duration > 0 && item.time >= item.duration - 1) {
+      item.time = 0;
+    }
+    state.library.progress[id] = item;
+    try {
+      if (window.Android && typeof window.Android.setWatched === "function") {
+        window.Android.setWatched(id, !!watched);
+      }
+    } catch (error) { /* noop */ }
+    saveLibrary(true);
+    render();
+    toast(watched ? "Marcado como assistido." : "Marcado como não assistido.");
+  }
+
+  function resetEntryProgress(id) {
+    if (!id) return;
+    delete state.library.progress[id];
+    try {
+      if (window.Android && typeof window.Android.clearProgress === "function") {
+        window.Android.clearProgress(id);
+      }
+    } catch (error) { /* noop */ }
+    saveLibrary(true);
+    render();
+    toast("Progresso resetado.");
+  }
+
+  function openEpisodeActions(id) {
+    if (!id) return;
+    var item = progressFor(id);
+    var watched = !!(item && item.watched);
+    var isLocal = String(id).indexOf("local:") === 0;
+    var actions = [
+      { label: "Reproduzir", value: "play" },
+      {
+        label: watched ? "Marcar como não assistido" : "Marcar como assistido",
+        value: "toggle"
+      },
+      { label: "Resetar progresso", value: "reset", danger: true }
+    ];
+    if (!isLocal) actions.push({ label: "Abrir no Chrome", value: "chrome" });
+
+    actionDialog("Episódio", episodeDisplayTitle(id), actions).then(function (choice) {
+      if (choice === "play") {
+        openFile(id, "", state.view === "folder" && state.folder
+          ? { entries: state.folder.entries }
+          : undefined);
+      } else if (choice === "toggle") {
+        markEntryWatched(id, !watched);
+      } else if (choice === "reset") {
+        resetEntryProgress(id);
+      } else if (choice === "chrome") {
+        openExternal("https://drive.google.com/file/d/" + encodeURIComponent(id) + "/view");
+      }
     });
   }
 
@@ -1778,10 +2093,102 @@
     });
 
     $("#main").addEventListener("click", handleMainClick);
+
+    var holdTimer = null;
+    var holdRow = null;
+    var holdStart = null;
+
+    function cancelHold() {
+      if (holdTimer) {
+        window.clearTimeout(holdTimer);
+        holdTimer = null;
+      }
+      holdStart = null;
+    }
+
+    $("#main").addEventListener("pointerdown", function (event) {
+      if (event.pointerType === "mouse" && event.button !== 0) return;
+      if (event.target.closest && event.target.closest("[data-menu-id]")) return;
+      var row = event.target.closest
+        ? event.target.closest("[data-play-id],[data-entry]")
+        : null;
+      if (!row) return;
+      var id = row.getAttribute("data-play-id") || row.getAttribute("data-entry");
+      if (!id) return;
+      if (row.hasAttribute("data-entry") && state.folder &&
+          Array.isArray(state.folder.entries)) {
+        var folderEntry = null;
+        for (var i = 0; i < state.folder.entries.length; i++) {
+          if (state.folder.entries[i].id === id) {
+            folderEntry = state.folder.entries[i];
+            break;
+          }
+        }
+        if (!folderEntry || folderEntry.isFolder) return;
+      }
+      cancelHold();
+      holdRow = row;
+      holdStart = { x: event.clientX, y: event.clientY };
+      holdTimer = window.setTimeout(function () {
+        holdTimer = null;
+        state.suppressPlayClick = true;
+        try { if (navigator.vibrate) navigator.vibrate(12); } catch (error) { /* noop */ }
+        openEpisodeActions(id);
+      }, 480);
+    }, true);
+
+    $("#main").addEventListener("pointermove", function (event) {
+      if (!holdTimer || !holdStart) return;
+      if (Math.abs(event.clientX - holdStart.x) > 9 ||
+          Math.abs(event.clientY - holdStart.y) > 9) {
+        cancelHold();
+      }
+    }, true);
+
+    $("#main").addEventListener("pointerup", cancelHold, true);
+    $("#main").addEventListener("pointercancel", cancelHold, true);
+
+    document.addEventListener("keydown", function (event) {
+      var menu = event.target.closest ? event.target.closest("[data-menu-id]") : null;
+      if (!menu || (event.key !== "Enter" && event.key !== " ")) return;
+      event.preventDefault();
+      openEpisodeActions(menu.getAttribute("data-menu-id"));
+    }, true);
+
+    var coverResizeTimer = null;
+    window.addEventListener("resize", function () {
+      if (coverResizeTimer) window.clearTimeout(coverResizeTimer);
+      coverResizeTimer = window.setTimeout(function () {
+        try {
+          if (window.Android && typeof window.Android.isCoverScreen === "function") {
+            var cover = window.Android.isCoverScreen() === true;
+            state.cover = cover;
+            document.body.classList.toggle("cover", cover);
+            var sub = $("#brandSub");
+            if (sub) sub.textContent = cover ? "Tela de capa" : "Google Drive no celular";
+          }
+        } catch (error) { /* noop */ }
+      }, 160);
+    });
   }
 
   function handleMainClick(event) {
-    var node = event.target.closest ? event.target.closest("[data-collection]") : null;
+    if (state.suppressPlayClick) {
+      state.suppressPlayClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    var node = event.target.closest ? event.target.closest("[data-menu-id]") : null;
+    if (node) {
+      event.preventDefault();
+      event.stopPropagation();
+      openEpisodeActions(node.getAttribute("data-menu-id"));
+      return;
+    }
+
+    node = event.target.closest ? event.target.closest("[data-collection]") : null;
     if (node) {
       openCollection(node.getAttribute("data-collection"));
       return;
@@ -1907,6 +2314,23 @@
       }
     }
 
+    // One-time migration: older builds auto-skipped the intro/ending at the
+    // very start, so the "Pular abertura" / "Pular encerramento" buttons never
+    // showed up. Manual skipping is the default from now on.
+    if (state.settings && state.settings.autoSkipVersion < 2) {
+      state.settings.skipIntro = false;
+      state.settings.skipEnding = false;
+      state.settings.autoSkipVersion = 2;
+      state.settings = normalizeSettings(state.settings);
+    }
+
+    // One-time subtitle default: the first build rounded the size to 100%.
+    if (state.settings && state.settings.subtitleVersion < 1) {
+      state.settings.subtitleSize = 1.3;
+      state.settings.subtitleVersion = 1;
+      state.settings = normalizeSettings(state.settings);
+    }
+
     var rawLibrary = null;
     try {
       if (window.Android && typeof window.Android.loadLibrary === "function") {
@@ -1970,8 +2394,16 @@
   window.__dpAddFile = function (id, title, url) {
     if (!id) return;
     var nice = cleanTitle(title, "Vídeo do Drive");
+    var generic = nice === "DrivePlay" || nice === "Vídeo do Drive";
+    if (generic) {
+      var known = findEntry(id);
+      if (known && known.entry && known.entry.name) {
+        nice = cleanTitle(known.entry.name, nice);
+        generic = false;
+      }
+    }
     addRecentFile(id, nice);
-    updateEntryTitle(id, nice);
+    if (!generic) updateEntryTitle(id, nice);
     saveLibrary();
     scheduleRender();
   };
@@ -2013,6 +2445,15 @@
     document.body.classList.toggle("cover", state.cover);
     var brandSub = $("#brandSub");
     if (brandSub) brandSub.textContent = state.cover ? "Tela de capa" : "Google Drive no celular";
+  };
+
+  // Keeps the home page in sync when the player changes a setting (subtitle
+  // style, automatic skip) so a later save here cannot overwrite it.
+  window.__dpUpdateSettings = function (json) {
+    var parsed = safeParse(json, null);
+    if (!parsed || typeof parsed !== "object") return;
+    state.settings = normalizeSettings(parsed);
+    if (state.view === "settings") syncSettings();
   };
 
   window.__dpFillSettingChanged = function (enabled) {

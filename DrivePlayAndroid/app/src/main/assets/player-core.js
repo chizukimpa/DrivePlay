@@ -30,14 +30,28 @@
   };
 
   var DEFAULTS = {
-    skipIntro: true,
+    skipIntro: false,
     introSeconds: 120,
-    skipEnding: true,
+    skipEnding: false,
     endingSeconds: 190,
     autoFullscreen: true,
     autoNext: true,
     resumePlayback: true,
-    fillScreen: false
+    fillScreen: false,
+    autoSkipVersion: 2,
+    subtitleSize: 1.3,
+    subtitleColor: "#ffffff",
+    subtitleOutline: true,
+    subtitleFont: "sans",
+    subtitleBackground: true
+  };
+
+  var CUE_SIZES = [1.0, 1.15, 1.3, 1.5, 1.75, 2.0];
+
+  var CUE_FONTS = {
+    sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+    serif: 'Georgia, "Times New Roman", "Noto Serif", serif',
+    mono: '"Roboto Mono", "SF Mono", Menlo, Consolas, monospace'
   };
 
   var ICONS = {
@@ -89,6 +103,14 @@
     settings.fillScreen = source.fillScreen === true;
     settings.introSeconds = clamp(Math.round(toNumber(source.introSeconds, 120)), 0, 3600);
     settings.endingSeconds = clamp(Math.round(toNumber(source.endingSeconds, 190)), 0, 3600);
+    settings.autoSkipVersion = clamp(Math.round(toNumber(source.autoSkipVersion, 2)), 0, 99);
+    settings.subtitleSize = clamp(toNumber(source.subtitleSize, 1.3), 0.7, 2.4);
+    settings.subtitleColor = /^#[0-9a-f]{6}$/i.test(String(source.subtitleColor || ""))
+      ? String(source.subtitleColor)
+      : "#ffffff";
+    settings.subtitleOutline = source.subtitleOutline !== false;
+    settings.subtitleFont = CUE_FONTS[source.subtitleFont] ? source.subtitleFont : "sans";
+    settings.subtitleBackground = source.subtitleBackground !== false;
     return settings;
   }
 
@@ -166,8 +188,6 @@
           '<span class="dp-title-text"></span>' +
           '<span class="dp-sub"></span>' +
         '</div>' +
-        '<button class="dp-chip" type="button" data-act="fill">Preencher</button>' +
-        '<button class="dp-btn" type="button" data-act="menu" aria-label="Mais opções">' + ICONS.menu + '</button>' +
       '</div>' +
       '<div class="dp-bottom">' +
         '<div class="dp-seek-row">' +
@@ -181,6 +201,10 @@
           '<button class="dp-btn dp-btn-primary" type="button" data-act="toggle" aria-label="Reproduzir">' + ICONS.play + '</button>' +
           '<button class="dp-btn dp-text-btn" type="button" data-act="fwd10" aria-label="Avançar 10 segundos">+10</button>' +
           '<button class="dp-btn" type="button" data-act="next" aria-label="Próximo episódio">' + ICONS.next + '</button>' +
+          '<div class="dp-extra">' +
+            '<button class="dp-chip" type="button" data-act="fill">Preencher</button>' +
+            '<button class="dp-btn" type="button" data-act="menu" aria-label="Mais opções">' + ICONS.menu + '</button>' +
+          '</div>' +
           '<button class="dp-btn dp-text-btn" type="button" data-act="speed" aria-label="Velocidade">1x</button>' +
           '<button class="dp-btn dp-text-btn" type="button" data-act="quality" aria-label="Qualidade">Auto</button>' +
           '<button class="dp-btn" type="button" data-act="chrome" aria-label="Abrir no navegador">' + ICONS.chrome + '</button>' +
@@ -250,10 +274,12 @@
     var resumeTarget = null;
     var didSkipIntro = false;
     var didAdvance = false;
+    var lastObservedTime = 0;
     var lastPaused = null;
     var lastPausedIcon = null;
     var toastTimer = null;
     var menuKind = "";
+    var menuScrollToRestore = -1;
     var tickTimer = null;
 
     titleNode.textContent = title;
@@ -262,6 +288,7 @@
     updateSubtitle();
     updateFillChip();
     updatePlayIcons();
+    applyCueStyle();
 
     if (playlist.length < 2) {
       prevButton.style.display = "none";
@@ -286,16 +313,65 @@
     }
 
     function updateSubtitle() {
-      if (playlist.length > 1) {
-        subNode.textContent = "Episódio " + (index + 1) + " de " + playlist.length;
-      } else {
-        subNode.textContent = "DrivePlay";
-      }
+      // The "Episódio X de Y" line was removed at the user's request.
+      subNode.textContent = "";
+      subNode.hidden = true;
     }
 
     function updateFillChip() {
       fillChip.textContent = fill ? "Original" : "Preencher";
       fillChip.classList.toggle("dp-active", fill);
+    }
+
+    function applyCueStyle() {
+      var size = clamp(toNumber(settings.subtitleSize, 1.3), 0.7, 2.4);
+      var color = settings.subtitleColor || "#ffffff";
+      var font = CUE_FONTS[settings.subtitleFont] || CUE_FONTS.sans;
+      root.style.setProperty("--dp-cue-size", String(size));
+      root.style.setProperty("--dp-cue-color", color);
+      root.style.setProperty("--dp-cue-font", font);
+      root.classList.toggle("dp-cue-outline", settings.subtitleOutline !== false);
+      root.classList.toggle("dp-cue-bg", settings.subtitleBackground !== false);
+    }
+
+    function cueSizeLabel(size) {
+      return Math.round(size * 100) + "%";
+    }
+
+    function updateCueSetting(key, value) {
+      var patch = {};
+      if (key === "size") {
+        settings.subtitleSize = clamp(toNumber(value, settings.subtitleSize), 0.7, 2.4);
+        patch.subtitleSize = settings.subtitleSize;
+      } else if (key === "color") {
+        settings.subtitleColor = String(value || "#ffffff");
+        patch.subtitleColor = settings.subtitleColor;
+      } else if (key === "outline") {
+        settings.subtitleOutline = value === "1" || value === true;
+        patch.subtitleOutline = settings.subtitleOutline;
+      } else if (key === "font") {
+        settings.subtitleFont = CUE_FONTS[value] ? value : "sans";
+        patch.subtitleFont = settings.subtitleFont;
+      } else if (key === "bg") {
+        settings.subtitleBackground = value === "1" || value === true;
+        patch.subtitleBackground = settings.subtitleBackground;
+      }
+      applyCueStyle();
+      if (typeof options.saveSettings === "function") {
+        try { options.saveSettings(patch); } catch (error) { /* noop */ }
+      }
+    }
+
+    function stepCueSize(direction) {
+      var current = toNumber(settings.subtitleSize, 1.3);
+      var nearest = 0;
+      var best = Infinity;
+      for (var i = 0; i < CUE_SIZES.length; i++) {
+        var delta = Math.abs(CUE_SIZES[i] - current);
+        if (delta < best) { best = delta; nearest = i; }
+      }
+      var next = clamp(nearest + (direction > 0 ? 1 : -1), 0, CUE_SIZES.length - 1);
+      updateCueSetting("size", CUE_SIZES[next]);
     }
 
     function updatePlayIcons() {
@@ -404,10 +480,20 @@
       lastSavedTick = time;
     }
 
+    function logNative(message) {
+      try {
+        if (window.PlayerBridge && typeof PlayerBridge.nativeLog === "function") {
+          PlayerBridge.nativeLog(String(message || ""));
+        }
+      } catch (error) { /* noop */ }
+    }
+
     function finishEpisode() {
       if (didAdvance) return;
       didAdvance = true;
       var total = duration();
+      logNative("finish episode at " + Math.round(currentTime()) + "/" + Math.round(total)
+        + " autoNext=" + settings.autoNext);
       saveProgress(total, total);
       if (settings.autoNext && typeof options.next === "function") {
         try {
@@ -423,6 +509,8 @@
       var total = duration();
       if (!(total > settings.introSeconds + 20)) return;
       didSkipIntro = true;
+      logNative("skip intro manual at " + Math.round(currentTime()) + " -> "
+        + settings.introSeconds);
       backend.seek(settings.introSeconds);
       toast("Abertura pulada");
       updateSkipPill();
@@ -435,21 +523,21 @@
       var action = "";
       var label = "";
 
+      if (time > settings.introSeconds + 6) didSkipIntro = false;
+
       if (
-        settings.skipIntro &&
         settings.introSeconds >= 5 &&
         total > settings.introSeconds + 20 &&
         time > 0.5 &&
-        time < settings.introSeconds - 1 &&
+        time < settings.introSeconds + 2 &&
         !didSkipIntro
       ) {
         action = "skipIntro";
         label = "Pular abertura";
       } else if (
-        settings.skipEnding &&
         settings.endingSeconds >= 5 &&
         total > settings.endingSeconds + 20 &&
-        time >= total - settings.endingSeconds - 20 &&
+        time >= total - settings.endingSeconds &&
         time < total - 1.5
       ) {
         action = "skipEnding";
@@ -458,9 +546,11 @@
 
       if (action) {
         pill.hidden = false;
+        pill.classList.add("dp-show");
         pill.setAttribute("data-skip", action);
         pillText.textContent = label;
       } else {
+        pill.classList.remove("dp-show");
         pill.hidden = true;
         pill.setAttribute("data-skip", "");
       }
@@ -514,6 +604,7 @@
     }
 
     function openMenu(kind) {
+      touch();
       if (menuKind === kind) {
         closeMenu();
         return;
@@ -539,6 +630,51 @@
             options2[j] === currentQuality
           );
         }
+      } else if (kind === "audio") {
+        html += '<div class="dp-menu-title">Faixa de áudio</div>';
+        var audioTracks = safeState().audio || [];
+        for (var a = 0; a < audioTracks.length; a++) {
+          html += menuButton(
+            audioTracks[a].label || ("Faixa " + (a + 1)),
+            "audio:" + audioTracks[a].index,
+            audioTracks[a].selected === true
+          );
+        }
+      } else if (kind === "text") {
+        html += '<div class="dp-menu-title">Legendas</div>';
+        var textTracks = safeState().text || [];
+        var anySelected = false;
+        for (var t = 0; t < textTracks.length; t++) {
+          if (textTracks[t].selected) anySelected = true;
+        }
+        html += menuButton("Desligadas", "text:-1", !anySelected);
+        for (var u = 0; u < textTracks.length; u++) {
+          html += menuButton(
+            textTracks[u].label || ("Legenda " + (u + 1)),
+            "text:" + textTracks[u].index,
+            textTracks[u].selected === true
+          );
+        }
+        html += menuButton("Estilo da legenda", "open:cue", false);
+      } else if (kind === "cue") {
+        var size = toNumber(settings.subtitleSize, 1.3);
+        html += '<div class="dp-menu-title">Tamanho — ' + cueSizeLabel(size) + '</div>';
+        html += menuButton("Diminuir", "cue:size:-1", false);
+        html += menuButton("Aumentar", "cue:size:1", false);
+        html += '<div class="dp-menu-title">Cor</div>';
+        html += menuButton("Branco", "cue:color:#ffffff", settings.subtitleColor === "#ffffff");
+        html += menuButton("Amarelo", "cue:color:#ffe066", settings.subtitleColor === "#ffe066");
+        html += menuButton("Ciano", "cue:color:#9be7ff", settings.subtitleColor === "#9be7ff");
+        html += '<div class="dp-menu-title">Contorno</div>';
+        html += menuButton("Ligado", "cue:outline:1", settings.subtitleOutline !== false);
+        html += menuButton("Desligado", "cue:outline:0", settings.subtitleOutline === false);
+        html += '<div class="dp-menu-title">Fonte</div>';
+        html += menuButton("Padrão", "cue:font:sans", settings.subtitleFont === "sans");
+        html += menuButton("Serifada", "cue:font:serif", settings.subtitleFont === "serif");
+        html += menuButton("Monoespaçada", "cue:font:mono", settings.subtitleFont === "mono");
+        html += '<div class="dp-menu-title">Fundo</div>';
+        html += menuButton("Ligado", "cue:bg:1", settings.subtitleBackground !== false);
+        html += menuButton("Desligado", "cue:bg:0", settings.subtitleBackground === false);
       } else {
         html += '<div class="dp-menu-title">Player</div>';
         html += menuButton(fill ? "Tamanho original" : "Preencher a tela", "fill", false);
@@ -546,6 +682,23 @@
         if ((safeState().qualities || []).length > 0 && options.canSetQuality !== false) {
           html += menuButton("Qualidade", "open:quality", false);
         }
+        if ((safeState().audio || []).length > 1) {
+          html += menuButton("Faixa de áudio", "open:audio", false);
+        }
+        if ((safeState().text || []).length > 0) {
+          html += menuButton("Legendas", "open:text", false);
+          html += menuButton("Estilo da legenda", "open:cue", false);
+        }
+        html += menuButton(
+          "Abertura automática · " + settings.introSeconds + " s",
+          "toggle:skipIntro",
+          settings.skipIntro
+        );
+        html += menuButton(
+          "Encerramento automático · " + settings.endingSeconds + " s",
+          "toggle:skipEnding",
+          settings.skipEnding
+        );
         if (options.canOpenExternal !== false) {
           html += menuButton("Abrir no Chrome", "chrome", false);
         }
@@ -554,6 +707,10 @@
 
       fillNode(menu, html);
       menu.classList.add("dp-open");
+      if (menuScrollToRestore >= 0) {
+        menu.scrollTop = menuScrollToRestore;
+        menuScrollToRestore = -1;
+      }
       touch();
     }
 
@@ -605,19 +762,28 @@
       if (ready && !didAdvance) {
         if (Math.abs(time - lastSavedTick) >= 5) saveProgress(time, total);
 
+        var jumped = Math.abs(time - lastObservedTime);
+        var crossedIntro = lastObservedTime > 0.5 &&
+          lastObservedTime < settings.introSeconds &&
+          time >= settings.introSeconds &&
+          jumped <= 8;
+
         if (
           settings.introSeconds >= 5 &&
           total > settings.introSeconds + 20 &&
-          time > 0.5 &&
-          time < settings.introSeconds - 1 &&
+          ((time > 0.5 && time < settings.introSeconds + 2) || crossedIntro) &&
           settings.skipIntro &&
           !paused &&
           !didSkipIntro
         ) {
           didSkipIntro = true;
+          logNative("skip intro auto at " + Math.round(time) + " -> "
+            + settings.introSeconds);
           backend.seek(settings.introSeconds);
           toast("Abertura pulada");
         }
+
+        lastObservedTime = time;
 
         var inEnding =
           settings.endingSeconds >= 5 &&
@@ -636,6 +802,7 @@
       if (
         settings.autoFullscreen &&
         visible &&
+        !menuKind &&
         !paused &&
         !state.ended &&
         Date.now() - lastActivity > 5000
@@ -722,8 +889,47 @@
       } else if (action.indexOf("quality:") === 0) {
         setQuality(action.slice(8));
         closeMenu();
+      } else if (action.indexOf("audio:") === 0) {
+        if (typeof backend.selectAudio === "function") {
+          backend.selectAudio(Number(action.slice(6)));
+        }
+        closeMenu();
+      } else if (action.indexOf("text:") === 0) {
+        if (typeof backend.selectText === "function") {
+          backend.selectText(Number(action.slice(5)));
+        }
+        closeMenu();
       } else if (action.indexOf("open:") === 0) {
         openMenu(action.slice(5));
+      } else if (action.indexOf("cue:") === 0) {
+        var cueParts = action.split(":");
+        var cueKey = cueParts[1];
+        var cueValue = cueParts[2];
+        if (cueKey === "size") {
+          stepCueSize(Number(cueValue) || 1);
+        } else {
+          updateCueSetting(cueKey, cueValue);
+        }
+        menuScrollToRestore = menu.scrollTop;
+        menuKind = "";
+        openMenu("cue");
+      } else if (action.indexOf("toggle:") === 0) {
+        var toggleKey = action.slice(7);
+        if (toggleKey === "skipIntro" || toggleKey === "skipEnding") {
+          settings[toggleKey] = !settings[toggleKey];
+          var togglePatch = {};
+          togglePatch[toggleKey] = settings[toggleKey];
+          if (typeof options.saveSettings === "function") {
+            try { options.saveSettings(togglePatch); } catch (error) { /* noop */ }
+          }
+          toast(toggleKey === "skipIntro"
+            ? (settings.skipIntro ? "Abertura automática ligada" : "Abertura automática desligada")
+            : (settings.skipEnding ? "Encerramento automático ligado" : "Encerramento automático desligado"));
+          updateSkipPill();
+          menuScrollToRestore = menu.scrollTop;
+          menuKind = "";
+          openMenu("main");
+        }
       } else if (action === "fill") {
         setFill(!fill);
         closeMenu();
@@ -787,6 +993,8 @@
       updateSettings: function (json) {
         settings = normalizeSettings(json);
         if (settings.fillScreen !== fill) setFill(settings.fillScreen, false);
+        applyCueStyle();
+        updateSkipPill();
       },
       pause: function () {
         try { backend.pause(); } catch (error) { /* noop */ }
