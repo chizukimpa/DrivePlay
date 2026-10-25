@@ -31,6 +31,24 @@ original, use **Abrir no VLC**.
 - Download do arquivo original e abertura do stream no VLC.
 - Sessão persistente do Google para arquivos privados.
 
+### Android 1.2.0
+
+O Android deixou de ser só um atalho para o Drive e agora tem a mesma estrutura dos
+apps de computador:
+
+- **Início** com continuar assistindo, pastas e vídeos recentes.
+- **Biblioteca** de coleções (pastas), com criar, renomear e excluir.
+- **Fontes** por coleção: links de vídeo, pastas do Drive e vídeos locais.
+- **Pastas do Drive** lidas dentro do app, com ordenação natural de episódios e
+  navegação em subpastas.
+- **Player próprio** sobre o preview do Drive: barra de progresso, ±10 s, velocidade,
+  qualidade, episódio anterior/próximo, preencher a tela e retomada de progresso.
+- **Vídeos locais** pelo seletor de arquivos, com registro persistente para reabrir
+  pelos recentes. Também aceita `VIEW`/`SEND` de `video/*` de outros apps.
+- Progresso e biblioteca gravados no aparelho (SharedPreferences + armazenamento do
+  WebView), então nada se perde ao fechar o app.
+- Interface em português, tema escuro e layout pensado para a tela de capa.
+
 ## Tecnologias
 
 - **macOS:** Swift, SwiftUI e WKWebView.
@@ -51,7 +69,7 @@ Baixe a versão mais recente na página de
 | Windows | `DrivePlay-Portable-1.1.0-x64.exe` | Portátil em um arquivo. |
 | Windows | `DrivePlay-1.1.0-win32-x64-portable.zip` | Pasta portátil. |
 | macOS | `DrivePlay-macOS-universal-1.1.0.zip` | App universal (Intel e Apple Silicon), macOS 14+. |
-| Android | `DrivePlay-Android-1.1.0.apk` | Android 7+; funciona no celular e na tela de capa via MultiStar. |
+| Android | `DrivePlay-Android-1.2.0.apk` | Android 7+; biblioteca, pastas e player próprios, com tela de capa via MultiStar. |
 
 Os builds não têm assinatura digital paga. No Windows, o SmartScreen pode pedir
 **Mais informações → Executar assim mesmo**. No macOS, clique com o botão direito no
@@ -60,16 +78,21 @@ fontes desconhecidas para o APK.
 
 ### Android e tela de capa
 
-Para usar na tela de capa do Galaxy Z Flip 6:
+O app já abre na biblioteca, sem passar pelo site do Drive. Para usar na tela de capa
+do Galaxy Z Flip 6:
 
 1. Ative o **MultiStar** (Good Lock) e permita o app na tela de capa.
 2. Abra o DrivePlay pela tela de capa.
-3. Ative **Preencher a tela** nos ajustes ou no botão da barra superior para remover
-   as faixas pretas.
+3. Escolha uma coleção ou pasta. Na capa, o player esconde velocidade, qualidade e
+   Chrome da barra inferior (ficam no menu) e mantém anterior/próximo, −10 s, play e
+   +10 s.
+4. Ative **Preencher a tela** nos ajustes ou no menu do player para remover as faixas
+   pretas.
 
 O login do Google pode ser bloqueado dentro do WebView. Nesse caso, use um link
 público/compartilhado ou abra o arquivo pelo Chrome; o DrivePlay mantém o fallback
-para o navegador.
+para o navegador. Arquivos privados que já abrem no Chrome normalmente também abrem no
+preview do Drive dentro do app.
 
 ## Como rodar
 
@@ -114,18 +137,29 @@ cd DrivePlayAndroid
 ./build-android.sh
 ```
 
-O APK assinado fica em `DrivePlayAndroid/build/DrivePlay-Android-1.1.0.apk`.
+O APK assinado fica em `DrivePlayAndroid/build/DrivePlay-Android-1.2.0.apk`.
 Requisitos: Android SDK 37, JDK 17 e as ferramentas de build em
 `$HOME/Library/Android/sdk`.
 
 ## Releases
 
+### 1.2.0 — Android
+
+Reescrita do app Android: biblioteca, coleções, pastas do Drive, player próprio e
+suporte a vídeos locais. Os builds de macOS e Windows continuam na 1.1.0 e são os
+mesmos arquivos daquela release.
+
+### 1.1.0 — macOS, Windows e Android
+
+Preencher a tela, tela cheia automática, pulos de 120 s/190 s e a primeira versão
+Android.
+
 O workflow em `.github/workflows/release.yml` compila as versões quando uma tag
 `v*` é enviada:
 
 ```bash
-git tag v1.1.0
-git push origin v1.1.0
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
 Ele também pode ser executado manualmente em **Actions → Release → Run workflow**,

@@ -7,7 +7,7 @@
   <title>DrivePlay</title>
   <link rel="stylesheet" href="styles.css">
 </head>
-<body>
+<body class="booting">
   <div id="app" class="app">
     <header class="topbar">
       <div class="brand">
@@ -16,150 +16,262 @@
         </div>
         <div class="brand-text">
           <h1>DrivePlay</h1>
-          <p>Google Drive no celular</p>
+          <p id="brandSub">Google Drive no celular</p>
         </div>
       </div>
-      <button class="icon-btn" id="settingsBtn" type="button" aria-label="Abrir ajustes">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.98 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.62 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.06A1.7 1.7 0 0 0 4.62 8.94a1.7 1.7 0 0 0-.34-1.87l-.06-.06 2.83-2.83.06.06a1.7 1.7 0 0 0 1.87.34A1.7 1.7 0 0 0 10.01 3V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.87A1.7 1.7 0 0 0 20.96 10H21v4h-.04A1.7 1.7 0 0 0 19.4 15Z"/></svg>
-      </button>
-    </header>
-
-    <main class="content">
-      <section class="link-card" aria-labelledby="linkLabel">
-        <label id="linkLabel" for="linkInput">Link do Google Drive</label>
-        <div class="link-row">
-          <input id="linkInput" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Cole um link de vídeo ou pasta">
-          <button class="icon-btn paste-btn" id="pasteBtn" type="button" aria-label="Colar link">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="4" width="8" height="4" rx="1"/><path d="M9 4H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="M9 12h6M9 16h4"/></svg>
-          </button>
-        </div>
-        <div class="link-actions">
-          <button class="btn btn-ghost" id="localBtn" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-10Z"/></svg>
-            <span>Vídeo local</span>
-          </button>
-          <button class="btn btn-primary" id="openBtn" type="button">
-            Abrir link
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-          </button>
-        </div>
-        <p class="hint">Links compartilhados, pastas do Drive ou arquivos do celular.</p>
-      </section>
-
-      <section class="hero" id="hero">
-        <div class="hero-glow" aria-hidden="true"></div>
-        <div class="hero-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
-        </div>
-        <p class="eyebrow">DrivePlay Mobile</p>
-        <h2>Seus vídeos do Drive,<br>no bolso.</h2>
-        <p class="hero-copy">Cole um link, abra uma pasta ou escolha um vídeo do celular. O player ocupa a tela inteira e se adapta à tela traseira do seu Flip.</p>
-        <div class="hero-actions">
-          <button class="btn btn-primary" id="heroOpen" type="button">Abrir um link</button>
-          <button class="btn btn-ghost" id="heroLocal" type="button">Escolher vídeo</button>
-        </div>
-        <p class="note">Dica: para arquivos privados, entre com sua conta ou use “Abrir no Chrome” dentro do player. Para a tela traseira, ative o acesso em Ajustes → Recursos avançados → Labs ou no Good Lock/MultiStar.</p>
-      </section>
-
-      <section class="library" id="librarySection" hidden>
-        <div class="section-head">
-          <div>
-            <p class="eyebrow">Recentes</p>
-            <h2>Sua biblioteca</h2>
-          </div>
-          <span class="count-badge" id="libraryCount">0</span>
-        </div>
-        <div class="library-list" id="libraryList"></div>
-        <button class="btn btn-ghost add-link-btn" id="addLinkBtn" type="button">+ Adicionar outro link</button>
-      </section>
-
-      <section class="cover-tip">
-        <div class="cover-tip-icon" aria-hidden="true">
-          <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10 5h4M11 18.5h2"/></svg>
-        </div>
-        <div>
-          <strong>Tela traseira do Galaxy Z Flip</strong>
-          <p>Dobre o celular e abra o DrivePlay pela tela de capa. A interface compacta e o player em tela cheia foram feitos para assistir Bleach confortavelmente.</p>
-        </div>
-      </section>
-    </main>
-  </div>
-
-  <div class="sheet" id="sheet" hidden aria-hidden="true">
-    <div class="sheet-backdrop" data-close-sheet></div>
-    <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
-      <div class="sheet-head">
-        <div>
-          <p class="eyebrow">Reprodução</p>
-          <h2 id="sheetTitle">Ajustes</h2>
-        </div>
-        <button class="icon-btn" type="button" data-close-sheet aria-label="Fechar ajustes">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="newCollectionBtn" type="button" aria-label="Nova pasta">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-10Z"/><path d="M12 10.5v5M9.5 13h5"/></svg>
+        </button>
+        <button class="icon-btn" id="settingsBtn" type="button" aria-label="Abrir ajustes">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.98 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.62 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.06A1.7 1.7 0 0 0 4.62 8.94a1.7 1.7 0 0 0-.34-1.87l-.06-.06 2.83-2.83.06.06a1.7 1.7 0 0 0 1.87.34A1.7 1.7 0 0 0 10.01 3V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.87A1.7 1.7 0 0 0 20.96 10H21v4h-.04A1.7 1.7 0 0 0 19.4 15Z"/></svg>
         </button>
       </div>
+    </header>
 
-      <div class="sheet-body">
-        <div class="setting-row">
-          <div class="setting-label">
-            <strong>Pular introdução</strong>
-            <span>Vai direto para o minuto configurado.</span>
+    <main class="main" id="main">
+      <!-- Início ---------------------------------------------------------->
+      <section class="view" id="viewHome" data-view="home">
+        <div class="link-card">
+          <label for="linkInput">Link do Google Drive</label>
+          <div class="link-row">
+            <input id="linkInput" type="url" inputmode="url" autocomplete="off" autocapitalize="off"
+                   spellcheck="false" placeholder="Cole um link de vídeo ou de pasta">
+            <button class="icon-btn paste-btn" id="pasteBtn" type="button" aria-label="Colar link">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="4" width="8" height="4" rx="1"/><path d="M9 4H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="M9 12h6M9 16h4"/></svg>
+            </button>
           </div>
-          <label class="switch"><input id="skipIntro" type="checkbox"><span class="track"></span></label>
-        </div>
-        <div class="setting-sub">
-          <label for="introSeconds">Pular para</label>
-          <div class="number-field"><input id="introSeconds" type="number" min="0" max="3600" step="5" inputmode="numeric"><span>s</span></div>
+          <div class="link-actions">
+            <button class="btn btn-ghost" id="localBtn" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-10Z"/></svg>
+              <span>Vídeo local</span>
+            </button>
+            <button class="btn btn-primary" id="openBtn" type="button">
+              Abrir link
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+          </div>
+          <p class="hint">Cole um link de vídeo ou de pasta compartilhada do Drive.</p>
         </div>
 
-        <div class="setting-row">
-          <div class="setting-label">
-            <strong>Pular encerramento</strong>
-            <span>Avança quando faltarem os segundos abaixo.</span>
+        <section class="block" id="continueBlock" hidden>
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Retomar</p>
+              <h2>Continuar assistindo</h2>
+            </div>
           </div>
-          <label class="switch"><input id="skipEnding" type="checkbox"><span class="track"></span></label>
+          <div class="card-row" id="continueList"></div>
+        </section>
+
+        <section class="block">
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Organização</p>
+              <h2>Suas pastas</h2>
+            </div>
+            <button class="text-btn" id="addCollectionBtn" type="button">+ Nova</button>
+          </div>
+          <div class="collection-grid" id="homeCollections"></div>
+        </section>
+
+        <section class="block" id="recentBlock" hidden>
+          <div class="section-head">
+            <div>
+              <p class="eyebrow">Histórico</p>
+              <h2>Recentes</h2>
+            </div>
+            <button class="text-btn" id="clearRecentsBtn" type="button">Limpar</button>
+          </div>
+          <div class="list" id="recentList"></div>
+        </section>
+
+        <section class="tip">
+          <div class="tip-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10 5h4M11 18.5h2"/></svg>
+          </div>
+          <div>
+            <strong>Tela de capa do Galaxy Z Flip</strong>
+            <p>Dobre o celular e abra o DrivePlay pela tela externa. A interface compacta e o player em tela cheia se adaptam ao MultiStar.</p>
+          </div>
+        </section>
+      </section>
+
+      <!-- Pastas ---------------------------------------------------------->
+      <section class="view" id="viewCollections" data-view="collections" hidden>
+        <div class="section-head big">
+          <div>
+            <p class="eyebrow">Biblioteca</p>
+            <h2>Suas pastas</h2>
+          </div>
+          <button class="btn btn-primary small" id="createCollectionBtn" type="button">+ Nova pasta</button>
         </div>
-        <div class="setting-sub">
-          <label for="endingSeconds">Pular faltando</label>
-          <div class="number-field"><input id="endingSeconds" type="number" min="0" max="3600" step="5" inputmode="numeric"><span>s</span></div>
+        <div class="collection-grid" id="collectionList"></div>
+        <p class="empty" id="collectionsEmpty" hidden>
+          Crie uma pasta para separar temporadas, animes ou cursos. Depois adicione links de pastas ou vídeos do Drive.
+        </p>
+      </section>
+
+      <!-- Detalhe da pasta ------------------------------------------------->
+      <section class="view" id="viewCollection" data-view="collection" hidden>
+        <div class="view-head">
+          <button class="icon-btn" type="button" data-back aria-label="Voltar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+          </button>
+          <div class="view-title">
+            <p class="eyebrow">Pasta</p>
+            <h2 id="collectionTitle"></h2>
+            <p class="meta" id="collectionMeta"></p>
+          </div>
+          <button class="icon-btn" id="collectionMenuBtn" type="button" aria-label="Opções da pasta">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5.5" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/><circle cx="12" cy="18.5" r="1.5" fill="currentColor" stroke="none"/></svg>
+          </button>
         </div>
 
-        <div class="divider"></div>
+        <div class="action-row">
+          <button class="btn btn-primary" id="playAllBtn" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/></svg>
+            Reproduzir tudo
+          </button>
+          <button class="btn btn-ghost" id="addSourceBtn" type="button">+ Fonte</button>
+        </div>
 
-        <div class="setting-row">
-          <div class="setting-label">
-            <strong>Tela cheia automática</strong>
-            <span>Esconde a interface depois de 5 s sem toque.</span>
-          </div>
-          <label class="switch"><input id="autoFullscreen" type="checkbox"><span class="track"></span></label>
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
-            <strong>Avançar episódios</strong>
-            <span>Usa a lista da pasta para tocar o próximo.</span>
-          </div>
-          <label class="switch"><input id="autoNext" type="checkbox"><span class="track"></span></label>
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
-            <strong>Retomar de onde parou</strong>
-            <span>Lembra a posição de cada vídeo.</span>
-          </div>
-          <label class="switch"><input id="resumePlayback" type="checkbox"><span class="track"></span></label>
-        </div>
-        <div class="setting-row">
-          <div class="setting-label">
-            <strong>Preencher a tela</strong>
-            <span>Zoom para cobrir toda a tela; pode cortar as bordas.</span>
-          </div>
-          <label class="switch"><input id="fillScreen" type="checkbox"><span class="track"></span></label>
-        </div>
-      </div>
+        <div class="source-strip" id="sourceStrip"></div>
+        <div class="list" id="episodeList"></div>
+        <p class="empty" id="collectionEmpty" hidden>
+          Esta pasta está vazia. Toque em <strong>+ Fonte</strong> e cole um link de pasta ou de vídeo do Drive.
+        </p>
+      </section>
 
-      <p class="sheet-note">As preferências ficam salvas neste celular. O DrivePlay não envia seus links para nenhum servidor.</p>
-    </div>
+      <!-- Navegar dentro de uma pasta -------------------------------------->
+      <section class="view" id="viewFolder" data-view="folder" hidden>
+        <div class="view-head">
+          <button class="icon-btn" type="button" data-back aria-label="Voltar">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>
+          </button>
+          <div class="view-title">
+            <p class="eyebrow" id="folderCrumb">Google Drive</p>
+            <h2 id="folderTitle"></h2>
+            <p class="meta" id="folderMeta"></p>
+          </div>
+          <button class="icon-btn" id="folderRefreshBtn" type="button" aria-label="Atualizar pasta">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg>
+          </button>
+        </div>
+
+        <div class="action-row" id="folderActions">
+          <button class="btn btn-primary" id="playFolderBtn" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" fill="currentColor" stroke="none"/></svg>
+            Reproduzir pasta
+          </button>
+          <button class="btn btn-ghost" id="addFolderSourceBtn" type="button">+ Adicionar</button>
+        </div>
+
+        <div class="list" id="folderList"></div>
+        <div class="loading" id="folderLoading" hidden><span class="spinner"></span> Carregando pasta…</div>
+        <p class="empty" id="folderEmpty" hidden></p>
+      </section>
+
+      <!-- Ajustes ---------------------------------------------------------->
+      <section class="view" id="viewSettings" data-view="settings" hidden>
+        <div class="section-head big">
+          <div>
+            <p class="eyebrow">Reprodução</p>
+            <h2>Ajustes</h2>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <div class="setting-row">
+            <div class="setting-label">
+              <strong>Pular abertura</strong>
+              <span>Avança automaticamente para o tempo abaixo.</span>
+            </div>
+            <label class="switch"><input id="skipIntro" type="checkbox"><span class="track"></span></label>
+          </div>
+          <div class="setting-sub">
+            <label for="introSeconds">Pular para</label>
+            <div class="number-field"><input id="introSeconds" type="number" min="0" max="3600" step="5" inputmode="numeric"><span>s</span></div>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-label">
+              <strong>Pular encerramento</strong>
+              <span>Passa para o próximo quando faltarem os segundos abaixo.</span>
+            </div>
+            <label class="switch"><input id="skipEnding" type="checkbox"><span class="track"></span></label>
+          </div>
+          <div class="setting-sub">
+            <label for="endingSeconds">Pular faltando</label>
+            <div class="number-field"><input id="endingSeconds" type="number" min="0" max="3600" step="5" inputmode="numeric"><span>s</span></div>
+          </div>
+
+          <div class="divider"></div>
+
+          <div class="setting-row">
+            <div class="setting-label">
+              <strong>Tela cheia automática</strong>
+              <span>Esconde a interface após 5 s sem toque.</span>
+            </div>
+            <label class="switch"><input id="autoFullscreen" type="checkbox"><span class="track"></span></label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <strong>Avançar episódios</strong>
+              <span>Toca o próximo vídeo da pasta automaticamente.</span>
+            </div>
+            <label class="switch"><input id="autoNext" type="checkbox"><span class="track"></span></label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <strong>Retomar de onde parou</strong>
+              <span>Guarda a posição de cada vídeo neste celular.</span>
+            </div>
+            <label class="switch"><input id="resumePlayback" type="checkbox"><span class="track"></span></label>
+          </div>
+          <div class="setting-row">
+            <div class="setting-label">
+              <strong>Preencher a tela</strong>
+              <span>Amplia o vídeo para cobrir a tela; pode cortar as bordas.</span>
+            </div>
+            <label class="switch"><input id="fillScreen" type="checkbox"><span class="track"></span></label>
+          </div>
+        </div>
+
+        <div class="settings-card">
+          <button class="settings-action" id="clearLibraryBtn" type="button">
+            <span>
+              <strong>Limpar biblioteca</strong>
+              <em>Remove pastas, fontes e posições salvas.</em>
+            </span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>
+          </button>
+        </div>
+
+        <p class="version" id="versionLabel">DrivePlay</p>
+        <p class="legal">O DrivePlay não envia seus links para nenhum servidor. Pastas e vídeos continuam no Google Drive; o player usa a visualização pública do Drive.</p>
+      </section>
+    </main>
+
+    <nav class="tabbar" id="tabbar">
+      <button class="tab active" type="button" data-tab="home">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1h-4.5v-5h-5v5H5a1 1 0 0 1-1-1v-8.5Z"/></svg>
+        <span>Início</span>
+      </button>
+      <button class="tab" type="button" data-tab="collections">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-10Z"/></svg>
+        <span>Pastas</span>
+      </button>
+      <button class="tab" type="button" data-tab="settings">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.98 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.62 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.06A1.7 1.7 0 0 0 4.62 8.94a1.7 1.7 0 0 0-.34-1.87l-.06-.06 2.83-2.83.06.06a1.7 1.7 0 0 0 1.87.34A1.7 1.7 0 0 0 10.01 3V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.87A1.7 1.7 0 0 0 20.96 10H21v4h-.04A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+        <span>Ajustes</span>
+      </button>
+    </nav>
   </div>
 
+  <div class="dialog" id="dialog" hidden aria-hidden="true"></div>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
   <script src="app.js"></script>
 </body>
 </html>
