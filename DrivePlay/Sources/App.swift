@@ -8,6 +8,8 @@ struct DrivePlayApp: App {
     @AppStorage("skipEnding") private var skipEnding = PlaybackDefaults.skipEnding
     @AppStorage("autoNext") private var autoNext = PlaybackDefaults.autoNext
     @AppStorage("resumePlayback") private var resumePlayback = PlaybackDefaults.resumePlayback
+    @AppStorage("autoFullscreen") private var autoFullscreen = PlaybackDefaults.autoFullscreen
+    @AppStorage("fillScreen") private var fillScreen = false
 
     private static var launchLink: String? {
         CommandLine.arguments.dropFirst().first { DriveLink.target(from: $0) != nil }
@@ -58,6 +60,9 @@ struct DrivePlayApp: App {
                 Toggle("Pular encerramento automaticamente", isOn: $skipEnding)
                 Toggle("Avançar para o próximo episódio", isOn: $autoNext)
                 Toggle("Retomar de onde parou", isOn: $resumePlayback)
+                Toggle("Tela cheia do vídeo após 5 s sem atividade", isOn: $autoFullscreen)
+                Toggle("Preencher a tela (pode cortar as bordas)", isOn: $fillScreen)
+                    .keyboardShortcut("f", modifiers: [.command, .shift])
             }
         }
     }

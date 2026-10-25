@@ -27,6 +27,7 @@ export const icons = {
   copy: `<svg viewBox="0 0 24 24" ${stroke}><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg>`,
   globe: `<svg viewBox="0 0 24 24" ${stroke}><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>`,
   fullscreen: `<svg viewBox="0 0 24 24" ${stroke}><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>`,
+  fillScreen: `<svg viewBox="0 0 24 24" ${stroke}><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/><path d="M4 9l5-5M20 9l-5-5M4 15l5 5M20 15l-5 5"/></svg>`,
   check: `<svg viewBox="0 0 24 24" ${stroke}><path d="M20 6L9 17l-5-5"/></svg>`,
   checkCircle: `<svg viewBox="0 0 24 24" ${stroke}><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>`,
   forwardEnd: '<svg viewBox="0 0 24 24"><path d="M5 4l9 8-9 8z" fill="currentColor"/><path d="M19 4v16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>',

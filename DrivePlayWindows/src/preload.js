@@ -27,10 +27,18 @@ contextBridge.exposeInMainWorld('api', {
   registerPlayer: (id) => ipcRenderer.send('player:register', id),
   seekPlayer: (time) => ipcRenderer.send('player:seek', time),
   setPlayerMuted: (muted) => ipcRenderer.send('player:mute', muted),
+  setPlayerFill: (enabled) => ipcRenderer.send('player:fill', !!enabled),
+  setPlayerActive: (active) => ipcRenderer.send('player:active', !!active),
+  setAutoFullscreenEnabled: (enabled) =>
+    ipcRenderer.send('auto-fullscreen:enabled', !!enabled),
+  resetAutoFullscreen: () => ipcRenderer.send('auto-fullscreen:reset'),
 
   setFullscreen: (value) => ipcRenderer.invoke('window:fullscreen', value),
   setTitle: (title) => ipcRenderer.send('window:title', title),
   updateMenu: (settings) => ipcRenderer.send('menu:update', settings),
+  onFullscreenChanged: (callback) => {
+    ipcRenderer.on('window:fullscreen-changed', (_event, value) => callback(!!value));
+  },
 
   appVersion: () => ipcRenderer.invoke('app:version'),
   getLaunchLink: () => ipcRenderer.invoke('app:launchLink'),

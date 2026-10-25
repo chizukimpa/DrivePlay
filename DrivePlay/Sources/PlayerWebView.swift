@@ -12,9 +12,23 @@ final class PlayerController: ObservableObject {
     @Published private(set) var hasVideo = false
 
     weak var webView: WKWebView?
+    private(set) var fillEnabled = false
 
     func attach(_ webView: WKWebView) {
         self.webView = webView
+    }
+
+    func configureFill(_ enabled: Bool) {
+        fillEnabled = enabled
+    }
+
+    func setFill(_ enabled: Bool) {
+        fillEnabled = enabled
+        send(["fill": enabled])
+    }
+
+    func reapplyFill() {
+        send(["fill": fillEnabled])
     }
 
     func reset() {
@@ -135,7 +149,50 @@ struct PlayerWebView: NSViewRepresentable {
         }
       }
 
+      function applyFill(enabled) {
+        var old = document.getElementById('__driveplayFill');
+        if (!enabled) {
+          if (old) old.remove();
+          var reset = allVideos();
+          for (var i = 0; i < reset.length; i++) {
+            try {
+              ['position','inset','width','height','max-width','max-height','object-fit','z-index','background']
+                .forEach(function(name) { reset[i].style.removeProperty(name); });
+            } catch (e) {}
+          }
+          return;
+        }
+
+        var style = old;
+        if (!style) {
+          style = document.createElement('style');
+          style.id = '__driveplayFill';
+          (document.head || document.documentElement).appendChild(style);
+        }
+        style.textContent =
+          'html,body{background:#000!important;overflow:hidden!important;}' +
+          'video{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;' +
+          'max-width:none!important;max-height:none!important;object-fit:cover!important;' +
+          'z-index:2147483000!important;background:#000!important;}';
+
+        var videos = allVideos();
+        for (var j = 0; j < videos.length; j++) {
+          try {
+            videos[j].style.setProperty('position', 'fixed', 'important');
+            videos[j].style.setProperty('inset', '0', 'important');
+            videos[j].style.setProperty('width', '100vw', 'important');
+            videos[j].style.setProperty('height', '100vh', 'important');
+            videos[j].style.setProperty('max-width', 'none', 'important');
+            videos[j].style.setProperty('max-height', 'none', 'important');
+            videos[j].style.setProperty('object-fit', 'cover', 'important');
+            videos[j].style.setProperty('z-index', '2147483000', 'important');
+            videos[j].style.setProperty('background', '#000', 'important');
+          } catch (e) {}
+        }
+      }
+
       function apply(cmd) {
+        if (typeof cmd.fill === 'boolean') applyFill(cmd.fill);
         var v = primaryVideo();
         if (!v) return;
         if (typeof cmd.seek === 'number' && isFinite(cmd.seek)) {
@@ -228,6 +285,7 @@ struct PlayerWebView: NSViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             NSLog("DrivePlay: preview carregado")
             parent.setLoading(false)
+            parent.controller.reapplyFill()
         }
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {

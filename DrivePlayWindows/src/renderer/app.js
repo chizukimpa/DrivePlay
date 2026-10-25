@@ -245,6 +245,31 @@ function persistSettings(immediate = false) {
   if (immediate) saveNow(api, 'settings', payload);
   else saveSoon(api, 'settings', payload, 180);
   api.updateMenu(payload);
+  if (api.setAutoFullscreenEnabled) {
+    api.setAutoFullscreenEnabled(!!state.settings.autoFullscreen);
+  }
+  syncAutoFullscreen();
+}
+
+function syncAutoFullscreen() {
+  if (!api.setPlayerActive) return;
+  const overlaysOpen =
+    state.modalStack.length > 0 ||
+    !!($('#menu-root') && $('#menu-root').childElementCount) ||
+    !!($('#popover-root') && $('#popover-root').childElementCount);
+  api.setPlayerActive(
+    !!state.currentID &&
+      state.player.hasVideo &&
+      !state.player.hasEnded &&
+      !state.isLoading &&
+      !overlaysOpen
+  );
+}
+
+function applyFullscreenState(value) {
+  state.fullscreen = !!value;
+  const videoFullscreen = !!value && !!state.currentID;
+  document.body.classList.toggle('video-fullscreen', videoFullscreen);
 }
 
 function persistLibrary(immediate = true) {
@@ -303,6 +328,7 @@ function closeMenus() {
     document.removeEventListener('keydown', menuKeyHandler, true);
     menuKeyHandler = null;
   }
+  syncAutoFullscreen();
 }
 
 function menuItemHTML(item, index) {
@@ -399,6 +425,7 @@ function showMenu(items, options = {}) {
     if (event.key === 'Escape') closeMenus();
   };
   document.addEventListener('keydown', menuKeyHandler, true);
+  syncAutoFullscreen();
 
   return menu;
 }
@@ -475,6 +502,7 @@ function closePopover() {
     document.removeEventListener('mousedown', popoverOutsideHandler, true);
     popoverOutsideHandler = null;
   }
+  syncAutoFullscreen();
 }
 
 function showSettingsPopover(anchor) {
@@ -507,6 +535,7 @@ function showSettingsPopover(anchor) {
     }
   };
   document.addEventListener('mousedown', popoverOutsideHandler, true);
+  syncAutoFullscreen();
 }
 
 function settingsPopoverHTML() {
@@ -527,8 +556,9 @@ function settingsPopoverHTML() {
     ${toggleRowHTML('autoNext', 'Avançar para o próximo episódio', settings.autoNext)}
     ${toggleRowHTML('resumePlayback', 'Retomar de onde parou', settings.resumePlayback)}
     ${toggleRowHTML('showSkipButtons', 'Mostrar botões de pular', settings.showSkipButtons)}
+    ${toggleRowHTML('autoFullscreen', 'Entrar em tela cheia do vídeo após 5 s sem atividade', settings.autoFullscreen)}
 
-    <div class="popover-note">As escolhas ficam salvas. O botão “Pular” na barra inferior indica quando o pulo automático está ativo.</div>
+    <div class="popover-note">As escolhas ficam salvas. O botão “Pular” na barra inferior indica quando o pulo automático está ativo. Depois de sair manualmente da tela cheia, ela volta a entrar apenas no próximo episódio.</div>
   `;
 }
 
@@ -652,6 +682,7 @@ function openModal(options = {}) {
     if (!backdrop.parentNode) return;
     backdrop.remove();
     state.modalStack = state.modalStack.filter((entry) => entry.backdrop !== backdrop);
+    syncAutoFullscreen();
   }
 
   backdrop.addEventListener('mousedown', (event) => {
@@ -693,6 +724,7 @@ function openModal(options = {}) {
 
   const entry = { backdrop, panel, close };
   state.modalStack.push(entry);
+  syncAutoFullscreen();
 
   if (typeof options.onMount === 'function') {
     options.onMount(panel, close, actions, actionButtons);
@@ -1379,6 +1411,7 @@ function renderFooter() {
     <button type="button" class="footer-icon" id="footer-browser" title="Abrir no navegador">${svg('globe', 15)}</button>
     <button type="button" class="footer-icon" id="footer-copy" title="Copiar link direto">${svg('copy', 15)}</button>
     <button type="button" class="footer-icon" id="footer-reload" title="Recarregar (${modLabel}R)">${svg('refresh', 15)}</button>
+    <button type="button" class="footer-icon ${state.settings.fillScreen ? 'active' : ''}" id="footer-fill" title="${state.settings.fillScreen ? 'Voltar ao tamanho original' : 'Preencher a tela (pode cortar as bordas)'}">${svg('fillScreen', 15)}</button>
     <button type="button" class="footer-icon" id="footer-fullscreen" title="Tela cheia (${fullscreenLabel})">${svg('fullscreen', 15)}</button>
   `;
 
@@ -1417,6 +1450,9 @@ function renderFooter() {
 
   const reload = $('#footer-reload', footer);
   if (reload) reload.addEventListener('click', reload);
+
+  const fill = $('#footer-fill', footer);
+  if (fill) fill.addEventListener('click', togglePlayerFill);
 
   const fullscreen = $('#footer-fullscreen', footer);
   if (fullscreen) fullscreen.addEventListener('click', toggleFullScreen);
@@ -1732,6 +1768,8 @@ function selectEntry(entry) {
 async function openFile(id, title = '') {
   if (!id) return;
 
+  api.resetAutoFullscreen();
+
   if (state.currentID && state.currentID !== id && state.player.duration > 1) {
     recordProgress(state.currentID, state.player.currentTime, state.player.duration);
   }
@@ -1857,6 +1895,7 @@ function setLibraryMode(value) {
   }
 
   persistSettings();
+  syncAutoFullscreen();
   renderAll();
 }
 
@@ -2173,6 +2212,7 @@ function handlePlayerLoading(loading) {
   state.isLoading = !!loading;
   updatePlayerOverlays();
   updateSkipButtons();
+  syncAutoFullscreen();
 }
 
 function handlePlayerError(message) {
@@ -2180,6 +2220,7 @@ function handlePlayerError(message) {
   state.errorMessage = message || 'Falha ao carregar o player do Google Drive.';
   updatePlayerOverlays();
   updateSkipButtons();
+  syncAutoFullscreen();
 }
 
 function handlePlayerTick(payload) {
@@ -2260,6 +2301,7 @@ function handlePlayerTick(payload) {
   }
 
   updateSkipButtons();
+  syncAutoFullscreen();
 }
 
 function finishCurrentEpisode(autoAdvance) {
@@ -2333,6 +2375,7 @@ function playPrevious() {
 
 function reload() {
   if (!state.currentID) return;
+  api.resetAutoFullscreen();
   state.errorMessage = null;
   state.isLoading = true;
   state.didResume = false;
@@ -2346,13 +2389,26 @@ function reload() {
 }
 
 async function toggleFullScreen() {
-  state.fullscreen = !state.fullscreen;
+  const desired = !state.fullscreen;
+  applyFullscreenState(desired);
   try {
-    const value = await api.setFullscreen(state.fullscreen);
-    state.fullscreen = !!value;
+    const value = await api.setFullscreen(desired);
+    applyFullscreenState(value);
   } catch (_) {
-    state.fullscreen = false;
+    applyFullscreenState(!desired);
   }
+}
+
+function togglePlayerFill() {
+  state.settings.fillScreen = !state.settings.fillScreen;
+  if (api.setPlayerFill) api.setPlayerFill(!!state.settings.fillScreen);
+  persistSettings();
+  renderFooter();
+  showToast(
+    state.settings.fillScreen
+      ? 'Tela preenchida — as bordas podem ser cortadas.'
+      : 'Tamanho original restaurado.'
+  );
 }
 
 // ---------------------------------------------------------------- downloads
@@ -2742,6 +2798,11 @@ function showHelp() {
       'playCircle',
       'Player integrado',
       'Clique em um episódio para tocar dentro do app. O player do Drive converte MKV no servidor; não é preciso instalar codecs.'
+    )}
+    ${helpRowHTML(
+      'fullscreen',
+      'Tela cheia automática do vídeo',
+      'Com um vídeo aberto, se você não mexer no mouse ou no teclado por 5 segundos, o app entra em tela cheia. Você pode desativar em Reprodução → Configurações. Depois de sair manualmente da tela cheia, ela volta a entrar apenas no próximo episódio.'
     )}
     ${helpRowHTML(
       'chevronRight',
@@ -3347,13 +3408,14 @@ async function init() {
   state.settings.selectedCollectionID = state.selectedCollectionID;
 
   createPlayer($('#player-host'));
+  if (api.setPlayerFill) api.setPlayerFill(!!state.settings.fillScreen);
 
   setPlayerHandlers({
     onTick: handlePlayerTick,
     onLoading: handlePlayerLoading,
     onError: handlePlayerError,
     onFullscreen: (value) => {
-      state.fullscreen = !!value;
+      applyFullscreenState(value);
       api.setFullscreen(!!value);
     },
   });
@@ -3363,6 +3425,9 @@ async function init() {
   api.onDownload(handleDownloadState);
   api.onMenuAction(handleMenuAction);
   api.onOpenLink(handleOpenLink);
+  api.onFullscreenChanged((value) => {
+    applyFullscreenState(value);
+  });
 
   persistSettings(true);
   renderAll();

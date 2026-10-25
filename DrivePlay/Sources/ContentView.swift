@@ -29,6 +29,8 @@ struct ContentView: View {
     @AppStorage("autoNext") private var autoNext = PlaybackDefaults.autoNext
     @AppStorage("resumePlayback") private var resumePlayback = PlaybackDefaults.resumePlayback
     @AppStorage("showSkipButtons") private var showSkipButtons = PlaybackDefaults.showSkipButtons
+    @AppStorage("autoFullscreen") private var autoFullscreen = PlaybackDefaults.autoFullscreen
+    @AppStorage("fillScreen") private var fillScreen = false
     @AppStorage("libraryMode") private var libraryMode = false
 
     @State private var linkText = ""
@@ -63,6 +65,7 @@ struct ContentView: View {
     @State private var lastSavedTick: Double = 0
     @State private var toast: String?
     @State private var toastToken = 0
+    @State private var videoFullscreen = false
 
     @FocusState private var linkFocused: Bool
 
@@ -74,18 +77,20 @@ struct ContentView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider().overlay(Color.white.opacity(0.07))
+            if !videoFullscreen {
+                header
+                Divider().overlay(Color.white.opacity(0.07))
+            }
 
             HStack(spacing: 0) {
-                if (browser.current != nil || libraryMode) && showSidebar {
+                if !videoFullscreen && (browser.current != nil || libraryMode) && showSidebar {
                     sidebar
                     Divider().overlay(Color.white.opacity(0.07))
                 }
                 content
             }
 
-            if currentID != nil {
+            if !videoFullscreen && currentID != nil {
                 Divider().overlay(Color.white.opacity(0.07))
                 footer
             }
@@ -100,6 +105,15 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .previousEpisode)) { _ in playPrevious() }
         .onChange(of: player.currentTime) { handlePlaybackTick() }
         .onChange(of: player.hasEnded) { handlePlaybackTick() }
+        .onChange(of: fillScreen) { player.setFill(fillScreen) }
+        .modifier(AutoFullscreenOnIdle(
+            enabled: autoFullscreen,
+            videoID: currentID,
+            hasVideo: player.hasVideo,
+            hasEnded: player.hasEnded,
+            isLoading: isLoading,
+            onFullscreenChange: { videoFullscreen = $0 }
+        ))
         .sheet(isPresented: $showHelp) { HelpView() }
         .sheet(isPresented: $showAddLibraryLink) {
             if let collection = media.selectedCollection {
@@ -1417,6 +1431,15 @@ struct ContentView: View {
             footerButton("Abrir no navegador", "safari", action: openInBrowser)
             footerButton("Copiar link direto", "doc.on.doc", action: copyDirectLink)
             footerButton("Recarregar", "arrow.clockwise", action: reload)
+            Button(action: toggleFillScreen) {
+                Image(systemName: "aspectratio")
+                    .font(.system(size: 13))
+                    .frame(width: 26, height: 24)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(fillScreen ? Theme.accent : Color.secondary)
+            .help(fillScreen ? "Voltar ao tamanho original" : "Preencher a tela (pode cortar as bordas)")
             footerButton("Tela cheia", "arrow.up.left.and.arrow.down.right", action: toggleFullScreen)
         }
         .padding(.horizontal, 16)
@@ -1521,7 +1544,20 @@ struct ContentView: View {
 
     // MARK: - Ações
 
+    private func migratePlaybackDefaults() {
+        let defaults = UserDefaults.standard
+        let key = "driveplay.playbackDefaultsRevision"
+        guard defaults.integer(forKey: key) < 2 else { return }
+
+        if introSeconds == 90 { introSeconds = 120 }
+        if endingSeconds == 180 { endingSeconds = 190 }
+        defaults.set(2, forKey: key)
+    }
+
     private func prepare() {
+        migratePlaybackDefaults()
+        player.configureFill(fillScreen)
+
         if ProcessInfo.processInfo.environment["DRIVEPLAY_LOG_TICKS"] != nil {
             NSLog(
                 "DrivePlay config: skipIntro=%@ intro=%.0f skipEnding=%@ ending=%.0f autoNext=%@ resume=%@",
@@ -1988,6 +2024,235 @@ struct ContentView: View {
     private func toggleFullScreen() {
         NSApp.keyWindow?.toggleFullScreen(nil)
     }
+
+    private func toggleFillScreen() {
+        fillScreen.toggle()
+        player.setFill(fillScreen)
+        showToast(
+            fillScreen
+                ? "Tela preenchida — as bordas podem ser cortadas."
+                : "Tamanho original restaurado."
+        )
+    }
+}
+
+// MARK: - Tela cheia automática
+
+private final class IdleFullscreenController: ObservableObject {
+    private var enabled = true
+    private var videoID: String?
+    private var hasVideo = false
+    private var hasEnded = false
+    private var isLoading = false
+    private var suppressed = false
+    private var token = 0
+    private var eventMonitor: Any?
+    private var observers: [NSObjectProtocol] = []
+    private let delay: TimeInterval = 5
+    var onFullscreenChange: ((Bool) -> Void)?
+
+    private var mainWindow: NSWindow? {
+        NSApp.mainWindow ?? NSApp.windows.first {
+            $0.isVisible && $0.styleMask.contains(.titled)
+        }
+    }
+
+    private var canAutoFullscreen: Bool {
+        enabled && videoID != nil && hasVideo && !hasEnded && !isLoading
+            && !suppressed && NSApp.isActive
+    }
+
+    func update(
+        enabled: Bool,
+        videoID: String?,
+        hasVideo: Bool,
+        hasEnded: Bool,
+        isLoading: Bool
+    ) {
+        if enabled && !self.enabled {
+            suppressed = false
+        }
+        if self.videoID != videoID {
+            suppressed = false
+        }
+
+        self.enabled = enabled
+        self.videoID = videoID
+        self.hasVideo = hasVideo
+        self.hasEnded = hasEnded
+        self.isLoading = isLoading
+
+        if ProcessInfo.processInfo.environment["DRIVEPLAY_LOG_TICKS"] != nil {
+            NSLog(
+                "DrivePlay idle update: enabled=%@ video=%@ hasVideo=%@ ended=%@ loading=%@ can=%@ active=%@",
+                String(enabled), videoID ?? "nil", String(hasVideo), String(hasEnded),
+                String(isLoading), String(canAutoFullscreen), String(NSApp.isActive)
+            )
+        }
+
+        if canAutoFullscreen {
+            schedule()
+        } else {
+            cancel()
+        }
+    }
+
+    func install() {
+        guard eventMonitor == nil else { return }
+
+        let mask: NSEvent.EventTypeMask = [
+            .mouseMoved, .leftMouseDown, .rightMouseDown, .otherMouseDown,
+            .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+            .scrollWheel, .keyDown, .flagsChanged,
+            .magnify, .rotate, .swipe, .gesture, .pressure
+        ]
+        eventMonitor = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
+            self?.noteActivity()
+            return event
+        }
+
+        let center = NotificationCenter.default
+        observers = [
+            center.addObserver(
+                forName: NSApplication.didBecomeActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in self?.noteActivity() },
+            center.addObserver(
+                forName: NSApplication.didResignActiveNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in self?.cancel() },
+            center.addObserver(
+                forName: NSWindow.didEnterFullScreenNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.onFullscreenChange?(true)
+                self?.cancel()
+            },
+            center.addObserver(
+                forName: NSWindow.didExitFullScreenNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in
+                self?.onFullscreenChange?(false)
+                self?.suppressed = true
+                self?.cancel()
+            },
+            center.addObserver(
+                forName: NSWindow.didMiniaturizeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in self?.cancel() },
+            center.addObserver(
+                forName: NSWindow.didDeminiaturizeNotification,
+                object: nil,
+                queue: .main
+            ) { [weak self] _ in self?.noteActivity() }
+        ]
+
+        noteActivity()
+    }
+
+    func teardown() {
+        if let eventMonitor {
+            NSEvent.removeMonitor(eventMonitor)
+            self.eventMonitor = nil
+        }
+        for observer in observers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        observers = []
+        cancel()
+    }
+
+    private func noteActivity() {
+        if canAutoFullscreen {
+            schedule()
+        } else {
+            cancel()
+        }
+    }
+
+    private func schedule() {
+        guard canAutoFullscreen else {
+            cancel()
+            return
+        }
+        if let mainWindow, mainWindow.styleMask.contains(.fullScreen) {
+            cancel()
+            return
+        }
+
+        token += 1
+        let currentToken = token
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, currentToken == self.token, self.canAutoFullscreen else {
+                if ProcessInfo.processInfo.environment["DRIVEPLAY_LOG_TICKS"] != nil {
+                    NSLog("DrivePlay idle timer: cancelado ou inválido")
+                }
+                return
+            }
+            guard let window = self.mainWindow,
+                  NSApp.keyWindow === window,
+                  window.isVisible,
+                  !window.isMiniaturized,
+                  !window.styleMask.contains(.fullScreen) else {
+                if ProcessInfo.processInfo.environment["DRIVEPLAY_LOG_TICKS"] != nil {
+                    NSLog("DrivePlay idle timer: janela indisponível ou não é a principal")
+                }
+                return
+            }
+            if ProcessInfo.processInfo.environment["DRIVEPLAY_LOG_TICKS"] != nil {
+                NSLog("DrivePlay idle timer: entrando em tela cheia")
+            }
+            window.toggleFullScreen(nil)
+        }
+    }
+
+    private func cancel() {
+        token += 1
+    }
+}
+
+private struct AutoFullscreenOnIdle: ViewModifier {
+    let enabled: Bool
+    let videoID: String?
+    let hasVideo: Bool
+    let hasEnded: Bool
+    let isLoading: Bool
+    let onFullscreenChange: (Bool) -> Void
+
+    @StateObject private var controller = IdleFullscreenController()
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                controller.onFullscreenChange = onFullscreenChange
+                update()
+                controller.install()
+            }
+            .onDisappear {
+                controller.teardown()
+            }
+            .onChange(of: enabled) { update() }
+            .onChange(of: videoID) { update() }
+            .onChange(of: hasVideo) { update() }
+            .onChange(of: hasEnded) { update() }
+            .onChange(of: isLoading) { update() }
+    }
+
+    private func update() {
+        controller.update(
+            enabled: enabled,
+            videoID: videoID,
+            hasVideo: hasVideo,
+            hasEnded: hasEnded,
+            isLoading: isLoading
+        )
+    }
 }
 
 // MARK: - Ajuda
@@ -2020,6 +2285,11 @@ struct HelpView: View {
                     "play.rectangle",
                     "Player integrado",
                     "Clique em um episódio para tocar dentro do app. O player do Drive converte MKV no servidor; não é preciso instalar codecs."
+                )
+                helpRow(
+                    "arrow.up.left.and.arrow.down.right",
+                    "Tela cheia automática",
+                    "Com um vídeo aberto, se você não mexer no mouse ou no teclado por 5 segundos, o app entra em tela cheia. Você pode desativar em Reprodução → Configurações. Depois de sair manualmente da tela cheia, ela volta a entrar apenas no próximo episódio."
                 )
                 helpRow(
                     "chevron.forward.2",

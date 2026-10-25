@@ -7,6 +7,7 @@ const {
   ipcMain,
   nativeImage,
   nativeTheme,
+  powerMonitor,
   shell,
   webContents,
 } = require('electron');
@@ -61,6 +62,39 @@ let win = null;
 let playerWC = null;
 let injectionTimer = null;
 let hookedPlayerID = null;
+let playerFill = false;
+
+const autoFullscreen = {
+  enabled: true,
+  active: false,
+  suppressed: false,
+  timer: null,
+  idleSeconds: 5,
+};
+
+function checkAutoFullscreen() {
+  if (!autoFullscreen.enabled || !autoFullscreen.active || autoFullscreen.suppressed) return;
+  if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized()) return;
+  if (!win.isFocused() || win.isFullScreen()) return;
+
+  let idle = 0;
+  try {
+    idle = powerMonitor.getSystemIdleTime();
+  } catch (_) {
+    return;
+  }
+  if (idle < autoFullscreen.idleSeconds) return;
+
+  win.setFullScreen(true);
+  if (!win.isDestroyed()) {
+    win.webContents.send('window:fullscreen-changed', true);
+  }
+}
+
+function startAutoFullscreenWatcher() {
+  if (autoFullscreen.timer) return;
+  autoFullscreen.timer = setInterval(checkAutoFullscreen, 1000);
+}
 
 const INJECT = String.raw`
 (() => {
@@ -121,6 +155,9 @@ const INJECT = String.raw`
   }
 
   function apply(command) {
+    if (typeof command.fill === 'boolean') {
+      setFill(command.fill);
+    }
     const video = primaryVideo();
     if (!video) return;
     if (typeof command.seek === 'number' && isFinite(command.seek)) {
@@ -132,6 +169,25 @@ const INJECT = String.raw`
     if (command.pause === true) {
       try { video.pause(); } catch (error) {}
     }
+  }
+
+  function setFill(enabled) {
+    const old = document.getElementById('__driveplayFill');
+    if (!enabled) {
+      if (old) old.remove();
+      return;
+    }
+    let style = old;
+    if (!style) {
+      style = document.createElement('style');
+      style.id = '__driveplayFill';
+      (document.head || document.documentElement).appendChild(style);
+    }
+    style.textContent =
+      'html,body{background:#000!important;overflow:hidden!important;}' +
+      'video{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;' +
+      'max-width:none!important;max-height:none!important;object-fit:cover!important;' +
+      'z-index:2147483000!important;background:#000!important;}';
   }
 
   window.__driveplayCmd = function (command) {
@@ -208,8 +264,10 @@ function injectPlayerFrames() {
     return;
   }
 
+  const fillCommand = `window.__driveplayCmd && window.__driveplayCmd({fill:${playerFill}});`;
   for (const frame of frames) {
     frame.executeJavaScript(INJECT).catch(() => {});
+    frame.executeJavaScript(fillCommand).catch(() => {});
   }
 }
 
@@ -267,6 +325,23 @@ function seekPlayer(time) {
   }
 }
 
+function setPlayerFill(enabled) {
+  playerFill = !!enabled;
+  if (!playerWC || playerWC.isDestroyed()) return;
+
+  let frames = [];
+  try {
+    frames = playerWC.mainFrame.framesInSubtree;
+  } catch (_) {
+    return;
+  }
+
+  const command = `window.__driveplayCmd && window.__driveplayCmd({fill:${playerFill}});`;
+  for (const frame of frames) {
+    frame.executeJavaScript(command).catch(() => {});
+  }
+}
+
 function createWindow() {
   const isMac = process.platform === 'darwin';
   const isWin = process.platform === 'win32';
@@ -305,6 +380,19 @@ function createWindow() {
 
   win.once('ready-to-show', () => win.show());
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  win.on('enter-full-screen', () => {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('window:fullscreen-changed', true);
+    }
+  });
+
+  win.on('leave-full-screen', () => {
+    autoFullscreen.suppressed = true;
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('window:fullscreen-changed', false);
+    }
+  });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//i.test(url)) shell.openExternal(url);
@@ -391,7 +479,24 @@ ipcMain.handle('download:reveal', () => downloads.reveal());
 ipcMain.handle('window:fullscreen', (_event, value) => {
   if (!win) return false;
   win.setFullScreen(!!value);
-  return win.isFullScreen();
+  if (!win.isDestroyed()) {
+    win.webContents.send('window:fullscreen-changed', !!value);
+  }
+  return !!value;
+});
+
+ipcMain.on('player:active', (_event, active) => {
+  autoFullscreen.active = !!active;
+});
+
+ipcMain.on('auto-fullscreen:enabled', (_event, enabled) => {
+  const next = !!enabled;
+  if (next && !autoFullscreen.enabled) autoFullscreen.suppressed = false;
+  autoFullscreen.enabled = next;
+});
+
+ipcMain.on('auto-fullscreen:reset', () => {
+  autoFullscreen.suppressed = false;
 });
 
 ipcMain.on('window:title', (_event, title) => {
@@ -404,6 +509,7 @@ ipcMain.on('menu:update', (_event, settings) => {
 
 ipcMain.on('player:register', (_event, id) => registerPlayer(id));
 ipcMain.on('player:seek', (_event, time) => seekPlayer(time));
+ipcMain.on('player:fill', (_event, enabled) => setPlayerFill(enabled));
 ipcMain.on('player:mute', (_event, muted) => {
   if (playerWC && !playerWC.isDestroyed()) playerWC.setAudioMuted(!!muted);
 });
@@ -414,6 +520,7 @@ ipcMain.handle('app:launchLink', () => launchLink);
 app.whenReady().then(() => {
   nativeTheme.themeSource = 'dark';
   createWindow();
+  startAutoFullscreenWatcher();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

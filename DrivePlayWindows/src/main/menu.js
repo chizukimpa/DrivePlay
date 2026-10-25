@@ -9,6 +9,7 @@ let currentSettings = {
   autoNext: true,
   resumePlayback: true,
   showSkipButtons: true,
+  autoFullscreen: true,
 };
 
 function send(action) {
@@ -127,6 +128,7 @@ function buildMenu(win, settings) {
       toggleItem('Avançar para o próximo episódio', 'autoNext'),
       toggleItem('Retomar de onde parou', 'resumePlayback'),
       toggleItem('Mostrar botões de pular', 'showSkipButtons'),
+      toggleItem('Tela cheia do vídeo após 5 s sem atividade', 'autoFullscreen'),
       { type: 'separator' },
       {
         label: 'Configurações de reprodução…',

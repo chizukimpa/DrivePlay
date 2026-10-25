@@ -2025,3 +2025,24 @@ body.platform-win #header {
 .help-shortcuts .help-title {
   margin-bottom: 2px;
 }
+
+
+/* --------------------------------------------------- vídeo em tela cheia */
+
+body.video-fullscreen #header,
+body.video-fullscreen #footer,
+body.video-fullscreen #sidebar {
+  display: none !important;
+}
+
+body.video-fullscreen #app {
+  background: #000;
+}
+
+body.video-fullscreen #main {
+  flex: 1;
+}
+
+body.video-fullscreen #content {
+  background: #000;
+}

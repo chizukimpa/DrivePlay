@@ -1,13 +1,14 @@
 import SwiftUI
 
 enum PlaybackDefaults {
-    static let skipIntro = false
-    static let introSeconds = 90.0
-    static let skipEnding = false
-    static let endingSeconds = 180.0
+    static let skipIntro = true
+    static let introSeconds = 120.0
+    static let skipEnding = true
+    static let endingSeconds = 190.0
     static let autoNext = true
     static let resumePlayback = true
     static let showSkipButtons = true
+    static let autoFullscreen = true
 }
 
 struct PlaybackSettingsView: View {
@@ -18,6 +19,7 @@ struct PlaybackSettingsView: View {
     @AppStorage("autoNext") private var autoNext = PlaybackDefaults.autoNext
     @AppStorage("resumePlayback") private var resumePlayback = PlaybackDefaults.resumePlayback
     @AppStorage("showSkipButtons") private var showSkipButtons = PlaybackDefaults.showSkipButtons
+    @AppStorage("autoFullscreen") private var autoFullscreen = PlaybackDefaults.autoFullscreen
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -53,7 +55,7 @@ struct PlaybackSettingsView: View {
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                 Spacer()
-                Stepper(value: $endingSeconds, in: 30...600, step: 15) {
+                Stepper(value: $endingSeconds, in: 30...1200, step: 10) {
                     Text("\(Int(endingSeconds)) s")
                         .font(.system(size: 11, design: .monospaced))
                 }
@@ -76,7 +78,11 @@ struct PlaybackSettingsView: View {
                 .toggleStyle(.switch)
                 .controlSize(.mini)
 
-            Text("As escolhas ficam salvas. O botão “Pular” na barra inferior indica quando o pulo automático está ativo.")
+            Toggle("Entrar em tela cheia do vídeo após 5 s sem atividade", isOn: $autoFullscreen)
+                .toggleStyle(.switch)
+                .controlSize(.mini)
+
+            Text("As escolhas ficam salvas. O botão “Pular” na barra inferior indica quando o pulo automático está ativo. Depois de sair manualmente da tela cheia, ela volta a entrar apenas no próximo episódio.")
                 .font(.system(size: 9))
                 .foregroundStyle(.tertiary)
                 .fixedSize(horizontal: false, vertical: true)

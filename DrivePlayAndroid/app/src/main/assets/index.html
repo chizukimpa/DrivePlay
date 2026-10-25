@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+  <meta name="theme-color" content="#0b0c10">
+  <title>DrivePlay</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+        </div>
+        <div class="brand-text">
+          <h1>DrivePlay</h1>
+          <p>Google Drive no celular</p>
+        </div>
+      </div>
+      <button class="icon-btn" id="settingsBtn" type="button" aria-label="Abrir ajustes">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.98 19.4a1.7 1.7 0 0 0-1.87.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.62 15a1.7 1.7 0 0 0-1.56-1.03H3v-4h.06A1.7 1.7 0 0 0 4.62 8.94a1.7 1.7 0 0 0-.34-1.87l-.06-.06 2.83-2.83.06.06a1.7 1.7 0 0 0 1.87.34A1.7 1.7 0 0 0 10.01 3V3h4v.08a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06 2.83 2.83-.06.06a1.7 1.7 0 0 0-.34 1.87A1.7 1.7 0 0 0 20.96 10H21v4h-.04A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+      </button>
+    </header>
+
+    <main class="content">
+      <section class="link-card" aria-labelledby="linkLabel">
+        <label id="linkLabel" for="linkInput">Link do Google Drive</label>
+        <div class="link-row">
+          <input id="linkInput" type="url" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Cole um link de vídeo ou pasta">
+          <button class="icon-btn paste-btn" id="pasteBtn" type="button" aria-label="Colar link">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="8" y="4" width="8" height="4" rx="1"/><path d="M9 4H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2h-2"/><path d="M9 12h6M9 16h4"/></svg>
+          </button>
+        </div>
+        <div class="link-actions">
+          <button class="btn btn-ghost" id="localBtn" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-10Z"/></svg>
+            <span>Vídeo local</span>
+          </button>
+          <button class="btn btn-primary" id="openBtn" type="button">
+            Abrir link
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+          </button>
+        </div>
+        <p class="hint">Links compartilhados, pastas do Drive ou arquivos do celular.</p>
+      </section>
+
+      <section class="hero" id="hero">
+        <div class="hero-glow" aria-hidden="true"></div>
+        <div class="hero-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>
+        </div>
+        <p class="eyebrow">DrivePlay Mobile</p>
+        <h2>Seus vídeos do Drive,<br>no bolso.</h2>
+        <p class="hero-copy">Cole um link, abra uma pasta ou escolha um vídeo do celular. O player ocupa a tela inteira e se adapta à tela traseira do seu Flip.</p>
+        <div class="hero-actions">
+          <button class="btn btn-primary" id="heroOpen" type="button">Abrir um link</button>
+          <button class="btn btn-ghost" id="heroLocal" type="button">Escolher vídeo</button>
+        </div>
+        <p class="note">Dica: para arquivos privados, entre com sua conta ou use “Abrir no Chrome” dentro do player. Para a tela traseira, ative o acesso em Ajustes → Recursos avançados → Labs ou no Good Lock/MultiStar.</p>
+      </section>
+
+      <section class="library" id="librarySection" hidden>
+        <div class="section-head">
+          <div>
+            <p class="eyebrow">Recentes</p>
+            <h2>Sua biblioteca</h2>
+          </div>
+          <span class="count-badge" id="libraryCount">0</span>
+        </div>
+        <div class="library-list" id="libraryList"></div>
+        <button class="btn btn-ghost add-link-btn" id="addLinkBtn" type="button">+ Adicionar outro link</button>
+      </section>
+
+      <section class="cover-tip">
+        <div class="cover-tip-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M10 5h4M11 18.5h2"/></svg>
+        </div>
+        <div>
+          <strong>Tela traseira do Galaxy Z Flip</strong>
+          <p>Dobre o celular e abra o DrivePlay pela tela de capa. A interface compacta e o player em tela cheia foram feitos para assistir Bleach confortavelmente.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="sheet" id="sheet" hidden aria-hidden="true">
+    <div class="sheet-backdrop" data-close-sheet></div>
+    <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="sheet-head">
+        <div>
+          <p class="eyebrow">Reprodução</p>
+          <h2 id="sheetTitle">Ajustes</h2>
+        </div>
+        <button class="icon-btn" type="button" data-close-sheet aria-label="Fechar ajustes">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="sheet-body">
+        <div class="setting-row">
+          <div class="setting-label">
+            <strong>Pular introdução</strong>
+            <span>Vai direto para o minuto configurado.</span>
+          </div>
+          <label class="switch"><input id="skipIntro" type="checkbox"><span class="track"></span></label>
+        </div>
+        <div class="setting-sub">
+          <label for="introSeconds">Pular para</label>
+          <div class="number-field"><input id="introSeconds" type="number" min="0" max="3600" step="5" inputmode="numeric"><span>s</span></div>
+        </div>
+
+        <div class="setting-row">
+          <div class="setting-label">
+            <strong>Pular encerramento</strong>
+            <span>Avança quando faltarem os segundos abaixo.</span>
+          </div>
+          <label class="switch"><input id="skipEnding" type="checkbox"><span class="track"></span></label>
+        </div>
+        <div class="setting-sub">
+          <label for="endingSeconds">Pular faltando</label>
+          <div class="number-field"><input id="endingSeconds" type="number" min="0" max="3600" step="5" inputmode="numeric"><span>s</span></div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="setting-row">
+          <div class="setting-label">
+            <strong>Tela cheia automática</strong>
+            <span>Esconde a interface depois de 5 s sem toque.</span>
+          </div>
+          <label class="switch"><input id="autoFullscreen" type="checkbox"><span class="track"></span></label>
+        </div>
+        <div class="setting-row">
+          <div class="setting-label">
+            <strong>Avançar episódios</strong>
+            <span>Usa a lista da pasta para tocar o próximo.</span>
+          </div>
+          <label class="switch"><input id="autoNext" type="checkbox"><span class="track"></span></label>
+        </div>
+        <div class="setting-row">
+          <div class="setting-label">
+            <strong>Retomar de onde parou</strong>
+            <span>Lembra a posição de cada vídeo.</span>
+          </div>
+          <label class="switch"><input id="resumePlayback" type="checkbox"><span class="track"></span></label>
+        </div>
+        <div class="setting-row">
+          <div class="setting-label">
+            <strong>Preencher a tela</strong>
+            <span>Zoom para cobrir toda a tela; pode cortar as bordas.</span>
+          </div>
+          <label class="switch"><input id="fillScreen" type="checkbox"><span class="track"></span></label>
+        </div>
+      </div>
+
+      <p class="sheet-note">As preferências ficam salvas neste celular. O DrivePlay não envia seus links para nenhum servidor.</p>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>

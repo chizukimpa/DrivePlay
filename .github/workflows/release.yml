@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag da versão (ex.: v1.0.0)"
+        description: "Tag da versão (ex.: v1.1.0)"
         required: true
-        default: "v1.0.0"
+        default: "v1.1.0"
 
 permissions:
   contents: write
@@ -47,7 +47,7 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType File -Path "dist/DrivePlay-win32-x64/portable.txt" -Force | Out-Null
-          Compress-Archive -Path "dist/DrivePlay-win32-x64" -DestinationPath "dist/DrivePlay-1.0.0-win32-x64-portable.zip" -Force
+          Compress-Archive -Path "dist/DrivePlay-win32-x64" -DestinationPath "dist/DrivePlay-1.1.0-win32-x64-portable.zip" -Force
 
       - name: Publicar artefatos
         uses: actions/upload-artifact@v4
@@ -74,13 +74,13 @@ jobs:
           ./build-universal.sh
 
       - name: Compactar app
-        run: ditto -c -k --sequesterRsrc --keepParent build/DrivePlay.app ../DrivePlay-macOS-universal.zip
+        run: ditto -c -k --sequesterRsrc --keepParent build/DrivePlay.app ../DrivePlay-macOS-universal-1.1.0.zip
 
       - name: Publicar artefato
         uses: actions/upload-artifact@v4
         with:
           name: macos
-          path: DrivePlay-macOS-universal.zip
+          path: DrivePlay-macOS-universal-1.1.0.zip
           if-no-files-found: error
 
   release:

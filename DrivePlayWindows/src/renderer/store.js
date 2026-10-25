@@ -1,13 +1,15 @@
 import { normalizeLibrary } from './library.js';
 
 export const DEFAULT_SETTINGS = {
-  skipIntro: false,
-  introSeconds: 90,
-  skipEnding: false,
-  endingSeconds: 180,
+  skipIntro: true,
+  introSeconds: 120,
+  skipEnding: true,
+  endingSeconds: 190,
   autoNext: true,
   resumePlayback: true,
   showSkipButtons: true,
+  autoFullscreen: true,
+  fillScreen: false,
   libraryMode: false,
   selectedCollectionID: null,
   lastFolderID: null,
@@ -26,15 +28,30 @@ export function normalizeSettings(raw) {
   return {
     ...DEFAULT_SETTINGS,
     ...input,
-    skipIntro: !!input.skipIntro,
-    skipEnding: !!input.skipEnding,
+    skipIntro: input.skipIntro == null ? DEFAULT_SETTINGS.skipIntro : !!input.skipIntro,
+    skipEnding: input.skipEnding == null ? DEFAULT_SETTINGS.skipEnding : !!input.skipEnding,
     autoNext: input.autoNext == null ? DEFAULT_SETTINGS.autoNext : !!input.autoNext,
     resumePlayback:
       input.resumePlayback == null ? DEFAULT_SETTINGS.resumePlayback : !!input.resumePlayback,
     showSkipButtons:
       input.showSkipButtons == null ? DEFAULT_SETTINGS.showSkipButtons : !!input.showSkipButtons,
-    introSeconds: clamp(input.introSeconds, 5, 600, DEFAULT_SETTINGS.introSeconds),
-    endingSeconds: clamp(input.endingSeconds, 5, 900, DEFAULT_SETTINGS.endingSeconds),
+    autoFullscreen:
+      input.autoFullscreen == null ? DEFAULT_SETTINGS.autoFullscreen : !!input.autoFullscreen,
+    fillScreen: input.fillScreen === true,
+    // A versão anterior usava 90 s de abertura e 180 s de encerramento.
+    // Atualiza só esses valores legados; durações personalizadas são mantidas.
+    introSeconds: clamp(
+      input.introSeconds === 90 || input.introSeconds == null ? 120 : input.introSeconds,
+      5,
+      900,
+      DEFAULT_SETTINGS.introSeconds
+    ),
+    endingSeconds: clamp(
+      input.endingSeconds === 180 || input.endingSeconds == null ? 190 : input.endingSeconds,
+      5,
+      1200,
+      DEFAULT_SETTINGS.endingSeconds
+    ),
     libraryMode: !!input.libraryMode,
     selectedCollectionID:
       typeof input.selectedCollectionID === 'string' ? input.selectedCollectionID : null,
