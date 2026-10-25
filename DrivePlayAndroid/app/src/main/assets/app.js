@@ -31,7 +31,7 @@
     folder: null,
     history: [],
     cover: false,
-    version: "1.2.0",
+    version: "1.3.0",
     nativeReady: false,
     pendingFetch: {},
     fetches: {},
