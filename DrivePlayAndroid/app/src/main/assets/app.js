@@ -2025,6 +2025,16 @@
     $("#pasteBtn").addEventListener("click", pasteLink);
     $("#localBtn").addEventListener("click", pickLocalVideo);
     $("#settingsBtn").addEventListener("click", function () { navigateRoot("settings"); });
+    var googleLoginBtn = $("#googleLoginBtn");
+    if (googleLoginBtn) {
+      googleLoginBtn.addEventListener("click", function () {
+        if (window.Android && typeof window.Android.openGoogleLogin === "function") {
+          window.Android.openGoogleLogin();
+        } else {
+          toast("Login disponível no app Android.");
+        }
+      });
+    }
     $("#newCollectionBtn").addEventListener("click", createCollectionFlow);
     $("#addCollectionBtn").addEventListener("click", createCollectionFlow);
     $("#createCollectionBtn").addEventListener("click", createCollectionFlow);

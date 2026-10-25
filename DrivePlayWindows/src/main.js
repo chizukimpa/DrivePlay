@@ -8,6 +8,7 @@ const {
   nativeImage,
   nativeTheme,
   powerMonitor,
+  session,
   shell,
   webContents,
 } = require('electron');
@@ -69,6 +70,60 @@ let playerMode = 'preview';
 
 let mediaServer = null;
 const nativeEntries = new Map();
+
+let loginWindow = null;
+let loginPromise = null;
+let loginResolve = null;
+
+function openLoginWindow() {
+  if (loginWindow && !loginWindow.isDestroyed()) {
+    loginWindow.focus();
+    return loginPromise || Promise.resolve({ ok: true });
+  }
+
+  loginPromise = new Promise((resolve) => {
+    loginResolve = resolve;
+  });
+
+  loginWindow = new BrowserWindow({
+    width: 980,
+    height: 760,
+    parent: win || undefined,
+    title: 'Entrar na conta Google',
+    backgroundColor: '#0b0c10',
+    autoHideMenuBar: true,
+    webPreferences: {
+      partition: 'persist:driveplay',
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  loginWindow.setMenuBarVisibility(false);
+  loginWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:\/\//i.test(url) && loginWindow && !loginWindow.isDestroyed()) {
+      loginWindow.loadURL(url);
+    }
+    return { action: 'deny' };
+  });
+  loginWindow.on('closed', () => {
+    loginWindow = null;
+    try {
+      const ses = session.fromPartition('persist:driveplay');
+      ses.cookies.flushStore();
+      ses.flushStorageData();
+    } catch (_) {}
+    const resolve = loginResolve;
+    loginResolve = null;
+    loginPromise = null;
+    if (resolve) resolve({ ok: true });
+  });
+
+  loginWindow.loadURL(
+    'https://accounts.google.com/ServiceLogin?service=wise&continue=https%3A%2F%2Fdrive.google.com%2F'
+  );
+  return loginPromise;
+}
 
 const autoFullscreen = {
   enabled: true,
@@ -687,6 +742,7 @@ ipcMain.on('player:mute', (_event, muted) => {
 
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('app:launchLink', () => launchLink);
+ipcMain.handle('account:login', () => openLoginWindow());
 
 app.whenReady().then(async () => {
   nativeTheme.themeSource = 'dark';

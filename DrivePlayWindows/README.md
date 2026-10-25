@@ -178,9 +178,9 @@ integrado, os controles ficam dentro do próprio vídeo e o rodapé fica oculto.
 ## Google Drive: login e limites
 
 O player usa uma sessão persistente do Google dentro do app. Se o Drive pedir login,
-entre na sua conta Google na própria janela do player; a sessão fica salva para as
-próximas vezes. Isso também ajuda quando o Drive mostra o aviso
-“Você atingiu o limite para pessoas que não fizeram login”.
+entre na sua conta pelo menu **Arquivo → Entrar na conta Google…**; a sessão fica
+salva para as próximas vezes e libera o arquivo original (com todas as faixas e
+legendas) quando o download anônimo está limitado.
 
 O player integrado pede ao Drive o **arquivo original** (com todas as faixas). Se o
 Drive responder com a página de **“Limite ultrapassado”**, o app não insiste: abre o

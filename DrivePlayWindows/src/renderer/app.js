@@ -2404,7 +2404,7 @@ function handleNativeEvent(event) {
       loadPlayer(id, { mode: 'preview' });
       showToast(
         /limite|quota|downloads/i.test(reason)
-          ? 'O Drive atingiu o limite de downloads — usando o player do Drive.'
+          ? 'Drive no limite — entre na conta Google no menu Arquivo para liberar o original.'
           : 'Reproduzindo no player do Drive (compatibilidade).'
       );
       renderAll();
@@ -3411,6 +3411,26 @@ function handleMenuAction(action) {
   switch (action.type) {
     case 'paste':
       pasteAndPlay();
+      break;
+    case 'googleLogin':
+      if (api.googleLogin) {
+        api
+          .googleLogin()
+          .then(() => {
+            if (state.currentID) {
+              showToast('Sessão salva. Abrindo o arquivo original…');
+              openFile(state.currentID, state.currentTitle);
+            } else {
+              showToast('Sessão salva. Abra o vídeo para usar o arquivo original.');
+            }
+          })
+          .catch((error) => {
+            showAlert(
+              'Não foi possível abrir o login',
+              (error && error.message) || 'Tente novamente.'
+            );
+          });
+      }
       break;
     case 'reload':
       reload();

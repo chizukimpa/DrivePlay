@@ -82,6 +82,10 @@ function buildMenu(win, settings) {
         click: () => send({ type: 'reload' }),
       },
       {
+        label: 'Entrar na conta Google…',
+        click: () => send({ type: 'googleLogin' }),
+      },
+      {
         label: 'Abrir no VLC',
         accelerator: 'CmdOrCtrl+Shift+O',
         click: () => send({ type: 'vlc' }),

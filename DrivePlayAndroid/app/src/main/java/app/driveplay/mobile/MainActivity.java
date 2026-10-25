@@ -114,6 +114,9 @@ public class MainActivity extends Activity {
     private String pendingLink;
     private boolean pageReady;
     private boolean destroyed;
+    private FrameLayout loginOverlay;
+    private WebView loginWebView;
+    private String lastQuotaPromptFile = "";
 
     private Runnable autoFullscreenLoop;
     private final Runnable resetAutoFullscreen = new Runnable() {
@@ -458,7 +461,7 @@ public class MainActivity extends Activity {
         PlaybackService.rememberTitle(currentTitle);
         PlaybackService.start(this, true);
 
-        String cookie = CookieManager.getInstance().getCookie("https://drive.google.com");
+        String cookie = DriveMedia.loginCookie();
         nativePlayer.open(fileId, currentTitle, cookie);
     }
 
@@ -508,6 +511,7 @@ public class MainActivity extends Activity {
                 runOnUiThread(new Runnable() {
                     @Override public void run() {
                         toast(message);
+                        maybeShowQuotaPrompt(message);
                     }
                 });
             }
@@ -1220,6 +1224,169 @@ public class MainActivity extends Activity {
     }
 
     // ---------------------------------------------------------------------
+    // Google session (unlocks the original file when Drive quota blocks the
+    // anonymous download). The cookies are shared with DriveMedia.
+    // ---------------------------------------------------------------------
+
+    private void maybeShowQuotaPrompt(String message) {
+        if (TextUtils.isEmpty(message) || !message.contains("limite")) return;
+        if (TextUtils.isEmpty(currentFileId) || currentFileId.equals(lastQuotaPromptFile)) return;
+        lastQuotaPromptFile = currentFileId;
+        try {
+            new AlertDialog.Builder(this)
+                .setTitle("Drive no limite de downloads")
+                .setMessage("O preview do Drive tem só uma faixa de áudio e não tem legendas. "
+                    + "Entre na sua conta Google para o app baixar o arquivo original, "
+                    + "com todas as faixas e legendas.")
+                .setPositiveButton("Entrar na conta", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface dialog, int which) {
+                        showGoogleLogin();
+                    }
+                })
+                .setNegativeButton("Usar preview", null)
+                .show();
+        } catch (Exception ignored) {
+            // The player keeps working in preview mode.
+        }
+    }
+
+    private boolean loginHostAllowed(String host) {
+        return host.endsWith("google.com") || host.endsWith("googleusercontent.com")
+            || host.endsWith("gstatic.com") || host.endsWith("googleapis.com")
+            || host.endsWith("youtube.com") || host.endsWith("ytimg.com")
+            || host.equals("accounts.youtube.com");
+    }
+
+    private void showGoogleLogin() {
+        if (loginOverlay != null || destroyed) return;
+        if (nativePlayer != null) nativePlayer.pause();
+
+        LinearLayout container = new LinearLayout(this);
+        container.setOrientation(LinearLayout.VERTICAL);
+        container.setBackgroundColor(Color.parseColor("#0b0c10"));
+
+        LinearLayout bar = new LinearLayout(this);
+        bar.setOrientation(LinearLayout.HORIZONTAL);
+        bar.setGravity(Gravity.CENTER_VERTICAL);
+        bar.setPadding(dp(4), 0, dp(4), 0);
+        bar.setBackgroundColor(Color.parseColor("#12141a"));
+
+        TextView close = new TextView(this);
+        close.setText("‹ Fechar");
+        close.setTextColor(Color.parseColor("#f3f4f7"));
+        close.setTextSize(15);
+        close.setGravity(Gravity.CENTER_VERTICAL);
+        close.setPadding(dp(10), 0, dp(10), 0);
+        close.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { closeGoogleLogin(false); }
+        });
+        bar.addView(close, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, dp(56)));
+
+        TextView title = new TextView(this);
+        title.setText("Conta Google");
+        title.setTextColor(Color.parseColor("#ffffff"));
+        title.setTextSize(16);
+        title.setTypeface(Typeface.DEFAULT_BOLD);
+        title.setGravity(Gravity.CENTER);
+        bar.addView(title, new LinearLayout.LayoutParams(0, dp(56), 1f));
+
+        TextView done = new TextView(this);
+        done.setText("Concluir");
+        done.setTextColor(Color.parseColor("#7d9bff"));
+        done.setTextSize(15);
+        done.setTypeface(Typeface.DEFAULT_BOLD);
+        done.setGravity(Gravity.CENTER);
+        done.setPadding(dp(10), 0, dp(10), 0);
+        done.setOnClickListener(new View.OnClickListener() {
+            @Override public void onClick(View view) { closeGoogleLogin(true); }
+        });
+        bar.addView(done, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, dp(56)));
+
+        container.addView(bar, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(56)));
+
+        WebView web = new WebView(this);
+        configureWebView(web, false);
+        WebSettings loginSettings = web.getSettings();
+        loginSettings.setUserAgentString(DESKTOP_USER_AGENT);
+        loginSettings.setAllowFileAccess(false);
+        loginSettings.setAllowContentAccess(false);
+        web.setBackgroundColor(Color.parseColor("#0b0c10"));
+        web.setWebChromeClient(new WebChromeClient());
+        web.setOnKeyListener(new View.OnKeyListener() {
+            @Override public boolean onKey(View view, int keyCode, android.view.KeyEvent event) {
+                if (keyCode == android.view.KeyEvent.KEYCODE_BACK
+                    && event.getAction() == android.view.KeyEvent.ACTION_UP) {
+                    closeGoogleLogin(false);
+                    return true;
+                }
+                return false;
+            }
+        });
+        web.setWebViewClient(new WebViewClient() {
+            @Override
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                Uri uri = request.getUrl();
+                String scheme = uri.getScheme();
+                if (!"http".equals(scheme) && !"https".equals(scheme)) return true;
+                String host = uri.getHost() == null ? "" : uri.getHost().toLowerCase(Locale.US);
+                if (loginHostAllowed(host)) return false;
+                openExternal(uri.toString());
+                return true;
+            }
+        });
+        web.loadUrl("https://accounts.google.com/ServiceLogin?service=wise"
+            + "&continue=https%3A%2F%2Fdrive.google.com%2F");
+        container.addView(web, new LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        loginWebView = web;
+        loginOverlay = new FrameLayout(this);
+        loginOverlay.setBackgroundColor(Color.parseColor("#0b0c10"));
+        loginOverlay.addView(container, match());
+        root.addView(loginOverlay, match());
+    }
+
+    private void closeGoogleLogin(boolean retry) {
+        if (loginOverlay == null) return;
+        try { CookieManager.getInstance().flush(); } catch (Exception ignored) {}
+
+        final String id = currentFileId;
+        final String title = currentTitle;
+        final String playlistSnapshot = playlistJson();
+
+        if (loginWebView != null) {
+            try {
+                loginWebView.stopLoading();
+                loginWebView.loadUrl("about:blank");
+                loginWebView.destroy();
+            } catch (Exception ignored) {}
+            loginWebView = null;
+        }
+        if (root != null) root.removeView(loginOverlay);
+        loginOverlay = null;
+
+        if (retry) {
+            toast("Sessão salva. Abrindo o arquivo original…");
+            handler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    if (destroyed) return;
+                    if (!TextUtils.isEmpty(id)) {
+                        showPlayer(id, title, playlistSnapshot);
+                    } else {
+                        restorePlayerSession();
+                    }
+                }
+            }, 250);
+        } else {
+            toast("Sessão salva.");
+            if (nativePlayer != null) nativePlayer.play();
+        }
+    }
+
+    // ---------------------------------------------------------------------
     // Local videos
     // ---------------------------------------------------------------------
 
@@ -1361,8 +1528,7 @@ public class MainActivity extends Activity {
         io.execute(new Runnable() {
             @Override
             public void run() {
-                final String cookie = CookieManager.getInstance()
-                    .getCookie("https://drive.google.com");
+                final String cookie = DriveMedia.loginCookie();
                 try {
                     final JSONObject folder = DriveApi.fetchFolder(folderId, cookie);
                     JSONObject result = new JSONObject();
@@ -1617,6 +1783,10 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
+        if (loginOverlay != null) {
+            closeGoogleLogin(false);
+            return;
+        }
         if (customView != null) {
             hideCustomViewInternal();
             return;
@@ -1865,7 +2035,7 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String probeMedia(String id) {
-            String cookie = CookieManager.getInstance().getCookie("https://drive.google.com");
+            String cookie = DriveMedia.loginCookie();
             return DriveMedia.probeJson(id, cookie);
         }
 
@@ -1873,6 +2043,13 @@ public class MainActivity extends Activity {
         public void openExternal(final String url) {
             runOnUiThread(new Runnable() {
                 @Override public void run() { MainActivity.this.openExternal(url); }
+            });
+        }
+
+        @JavascriptInterface
+        public void openGoogleLogin() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() { showGoogleLogin(); }
             });
         }
 
@@ -2233,8 +2410,7 @@ public class MainActivity extends Activity {
             runOnUiThread(new Runnable() {
                 @Override public void run() {
                     if (nativePlayer == null || TextUtils.isEmpty(currentFileId)) return;
-                    String cookie = CookieManager.getInstance()
-                        .getCookie("https://drive.google.com");
+                    String cookie = DriveMedia.loginCookie();
                     nativePlayer.open(currentFileId, currentTitle, cookie);
                 }
             });

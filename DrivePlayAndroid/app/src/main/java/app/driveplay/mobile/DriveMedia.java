@@ -281,6 +281,44 @@ final class DriveMedia {
         }
     }
 
+    /**
+     * Cookies from every Google host involved in the download flow. Merging
+     * them means a session created in the login WebView is used for both the
+     * resolve request and the usercontent download.
+     */
+    static String loginCookie() {
+        try {
+            android.webkit.CookieManager manager = android.webkit.CookieManager.getInstance();
+            String[] urls = {
+                "https://drive.google.com",
+                "https://drive.usercontent.google.com",
+                "https://accounts.google.com",
+                "https://www.google.com"
+            };
+            java.util.LinkedHashMap<String, String> pairs = new java.util.LinkedHashMap<>();
+            for (String url : urls) {
+                String raw = manager.getCookie(url);
+                if (TextUtils.isEmpty(raw)) continue;
+                String[] parts = raw.split(";");
+                for (String part : parts) {
+                    String value = part == null ? "" : part.trim();
+                    if (value.isEmpty()) continue;
+                    int eq = value.indexOf('=');
+                    String name = eq > 0 ? value.substring(0, eq) : value;
+                    if (!pairs.containsKey(name)) pairs.put(name, value);
+                }
+            }
+            StringBuilder merged = new StringBuilder();
+            for (String value : pairs.values()) {
+                if (merged.length() > 0) merged.append("; ");
+                merged.append(value);
+            }
+            return merged.toString();
+        } catch (Exception error) {
+            return "";
+        }
+    }
+
     /** Cookie header the WebView session would send to this URL. */
     static String cookieFor(String url) {
         try {

@@ -46,6 +46,7 @@ contextBridge.exposeInMainWorld('api', {
 
   appVersion: () => ipcRenderer.invoke('app:version'),
   getLaunchLink: () => ipcRenderer.invoke('app:launchLink'),
+  googleLogin: () => ipcRenderer.invoke('account:login'),
 
   onDownload: (callback) => {
     ipcRenderer.on('download:state', (_event, state) => callback(state));
