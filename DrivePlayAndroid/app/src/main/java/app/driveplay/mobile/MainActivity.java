@@ -95,6 +95,10 @@ public class MainActivity extends Activity {
     private boolean launchedWithLink;
     private int lastDisplayId = -1;
     private int lastChromeDisplayId = -1;
+    private int lastDensityDpi;
+    /** Avoids a recreate loop when Samsung refuses to fix the window. */
+    private static String lastRecreateKey = "";
+    private static long lastRecreateAt;
     /** Set between onRetainNonConfigurationInstance and onDestroy. */
     private boolean handoffPending;
 
@@ -163,6 +167,7 @@ public class MainActivity extends Activity {
         DriveMedia.setAccessToken(GoogleOAuth.cachedToken(this));
         fillScreen = readFillScreen(settingsJson);
         coverMode = isCoverScreen();
+        lastDensityDpi = getResources().getConfiguration().densityDpi;
         android.util.Log.d("DrivePlay", "activity onCreate display=" + currentDisplayId()
             + " " + configInfo(getResources().getConfiguration()));
 
@@ -205,6 +210,11 @@ public class MainActivity extends Activity {
                     "window.__dpNativeReady && window.__dpNativeReady();", null);
                 deliverPendingLink();
                 applyCoverMode();
+                handler.postDelayed(new Runnable() {
+                    @Override public void run() {
+                        ensureBrowserViewports();
+                    }
+                }, 300);
             }
         });
         appView.loadUrl("file:///android_asset/index.html");
@@ -236,6 +246,11 @@ public class MainActivity extends Activity {
                 }
             }, 250);
         }
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                ensureFullWindow();
+            }
+        }, 800);
     }
 
     @Override
@@ -325,15 +340,45 @@ public class MainActivity extends Activity {
             + " orient=" + configuration.orientation;
     }
 
+    /** Density of the physical panel, which is what the WebView uses for dpr. */
+    private float displayDensity() {
+        try {
+            android.view.Display display = getDisplay();
+            if (display != null) {
+                android.util.DisplayMetrics metrics = new android.util.DisplayMetrics();
+                display.getRealMetrics(metrics);
+                if (metrics.density > 0) return metrics.density;
+            }
+        } catch (Exception ignored) {
+            // Fall back to the activity resources.
+        }
+        return getResources().getDisplayMetrics().density;
+    }
+
     private boolean isCoverScreen() {
+        // Use the physical panel, not the window: Samsung can keep a
+        // cover-sized window for a moment after unfolding, and the home would
+        // then use the cover layout on the inner display. The cover panel is
+        // 748x720; the inner panel is 1080x2640.
+        try {
+            android.view.Display display = getDisplay();
+            if (display != null) {
+                android.view.Display.Mode mode = display.getMode();
+                int panelWidth = mode.getPhysicalWidth();
+                int panelHeight = mode.getPhysicalHeight();
+                if (panelWidth > 0 && panelHeight > 0) {
+                    return panelWidth <= 900 && panelHeight <= 900;
+                }
+            }
+        } catch (Exception ignored) {
+            // Fall back to the window/configuration below.
+        }
+
         int width = 0;
         int height = 0;
         float density = getResources().getDisplayMetrics().density;
         if (density <= 0) density = 1f;
 
-        // The activity's Configuration can lag behind the real window after a
-        // fold/unfold. The window metrics reflect the surface the WebView is
-        // actually using, which is what the CSS must match.
         if (Build.VERSION.SDK_INT >= 30) {
             try {
                 android.graphics.Rect bounds =
@@ -359,11 +404,65 @@ public class MainActivity extends Activity {
         }
         if (width <= 0 || height <= 0) return false;
 
-        // The cover panel is small and roughly square: 748x720 at 2x is about
-        // 374x360 dp (or 641x617 CSS in Samsung's cover window). The inner
-        // display is 360x880 or 880x360, so it is never square-ish.
         boolean squareish = Math.abs(width - height) <= 280;
         return width <= 780 && height <= 780 && squareish;
+    }
+
+    /**
+     * Samsung can leave the task in a cover-sized compatibility window after
+     * unfolding. Recreate the activity once per display so the window is
+     * re-measured against the full panel. The player handoff keeps playback
+     * alive across this recreation.
+     */
+    private void ensureFullWindow() {
+        if (destroyed || isFinishing() || isChangingConfigurations()) return;
+        if (Build.VERSION.SDK_INT < 30 || isInMultiWindowMode()) return;
+        if (isCoverScreen()) {
+            // A new fold starts a new attempt when the phone is opened again.
+            lastRecreateKey = "";
+            return;
+        }
+        try {
+            android.view.Display display = getDisplay();
+            if (display == null) return;
+            android.view.Display.Mode mode = display.getMode();
+            int panelWidth = mode.getPhysicalWidth();
+            int panelHeight = mode.getPhysicalHeight();
+            android.graphics.Rect current =
+                getWindowManager().getCurrentWindowMetrics().getBounds();
+            if (panelWidth <= 0 || panelHeight <= 0 ||
+                current.width() <= 0 || current.height() <= 0) {
+                return;
+            }
+            boolean tooSmall = current.width() < panelWidth * 0.9
+                && current.height() < panelHeight * 0.9;
+            if (!tooSmall) return;
+            requestWindowRecreate("size " + current.width() + "x" + current.height(),
+                display.getDisplayId());
+        } catch (Exception ignored) {
+            // If the metrics are unavailable, keep the current window.
+        }
+    }
+
+    /**
+     * Recreates the activity to get a fresh window/WebView after a display
+     * change. The player is retained across the recreation (onRetain...), so
+     * the video keeps its position and audio.
+     */
+    private void requestWindowRecreate(final String reason, final int displayId) {
+        if (destroyed || isFinishing() || isChangingConfigurations()) return;
+        final String key = displayId + ":" + reason;
+        if (key.equals(lastRecreateKey)) return;
+        long now = SystemClock.elapsedRealtime();
+        if (now - lastRecreateAt < 1500) return;
+        lastRecreateKey = key;
+        lastRecreateAt = now;
+        android.util.Log.d("DrivePlay", "window recreate " + key);
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (!destroyed && !isFinishing()) recreate();
+            }
+        }, 300);
     }
 
     private void applyCoverMode() {
@@ -772,6 +871,16 @@ public class MainActivity extends Activity {
                         double inner = json.optDouble("w", 0);
                         double dpr = json.optDouble("d", 1);
                         if (dpr <= 0) dpr = 1;
+                        double expectedDensity = displayDensity();
+                        android.util.Log.d("DrivePlay", "viewport check inner=" + inner
+                            + " dpr=" + dpr + " density=" + expectedDensity
+                            + " widthPx=" + widthPx + " player=" + player);
+                        if (expectedDensity > 0 &&
+                            Math.abs(dpr - expectedDensity) > 0.2) {
+                            requestWindowRecreate("webview density " + dpr
+                                + " expected " + expectedDensity, currentDisplayId());
+                            return;
+                        }
                         double expected = widthPx / dpr;
                         if (inner <= 0 || expected <= 0) return;
                         double tolerance = Math.max(14, expected * 0.08);
@@ -2115,19 +2224,22 @@ public class MainActivity extends Activity {
                 }
             }
         }
-        if (displayChanged) {
-            handler.postDelayed(new Runnable() {
-                @Override public void run() {
-                    ensureBrowserViewports();
-                }
-            }, 320);
-        }
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                ensureBrowserViewports();
+            }
+        }, 320);
         lastDisplayId = displayId;
         handler.postDelayed(new Runnable() {
             @Override public void run() {
                 if (!destroyed) applyCoverMode();
             }
         }, 260);
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                ensureFullWindow();
+            }
+        }, 700);
     }
 
     @Override
@@ -2144,6 +2256,14 @@ public class MainActivity extends Activity {
         super.onConfigurationChanged(newConfig);
         android.util.Log.d("DrivePlay", "activity configChanged "
             + configInfo(newConfig) + " display=" + currentDisplayId());
+        int densityDpi = newConfig == null ? 0 : newConfig.densityDpi;
+        if (lastDensityDpi > 0 && densityDpi > 0 && densityDpi != lastDensityDpi) {
+            // Samsung can keep a WebView created on the cover at density 320
+            // (devicePixelRatio 2) after moving to the inner 480 dpi panel.
+            requestWindowRecreate("density " + lastDensityDpi + "->" + densityDpi,
+                currentDisplayId());
+        }
+        if (densityDpi > 0) lastDensityDpi = densityDpi;
         if (root != null) root.requestApplyInsets();
         applyCoverMode();
         forceBrowserLayout();
@@ -2163,18 +2283,21 @@ public class MainActivity extends Activity {
             else nativePlayer.refreshSurface();
             nativePlayer.onSizeChanged();
         }
-        if (displayChanged) {
-            handler.postDelayed(new Runnable() {
-                @Override public void run() {
-                    if (destroyed) return;
-                    applyCoverMode();
-                    forceBrowserLayout();
-                    if (nativePlayer != null) nativePlayer.onSizeChanged();
-                    ensureBrowserViewports();
-                }
-            }, 320);
-        }
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                if (destroyed) return;
+                applyCoverMode();
+                forceBrowserLayout();
+                if (nativePlayer != null) nativePlayer.onSizeChanged();
+                ensureBrowserViewports();
+            }
+        }, 320);
         lastDisplayId = displayId;
+        handler.postDelayed(new Runnable() {
+            @Override public void run() {
+                ensureFullWindow();
+            }
+        }, 700);
     }
 
     @Override
