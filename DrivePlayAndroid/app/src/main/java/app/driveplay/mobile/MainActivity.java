@@ -95,6 +95,25 @@ public class MainActivity extends Activity {
     private boolean launchedWithLink;
     private int lastDisplayId = -1;
     private int lastChromeDisplayId = -1;
+    /** Set between onRetainNonConfigurationInstance and onDestroy. */
+    private boolean handoffPending;
+
+    /**
+     * Keeps the native player (and its audio) alive while Samsung recreates the
+     * activity to change the display/window size. The WebView chrome is
+     * rebuilt, but ExoPlayer is not restarted and keeps its position.
+     */
+    private static final class PlayerHandoff {
+        String fileId;
+        String title;
+        String playlistJson;
+        int playlistIndex;
+        boolean fill;
+        boolean local;
+        String localUri;
+        NativeVideoPlayer nativePlayer;
+        View videoView;
+    }
     private boolean chromeHidden;
     private boolean autoFullscreenSuppressed;
     private long lastActivity;
@@ -199,13 +218,54 @@ public class MainActivity extends Activity {
                 applyCoverMode();
             }
         }, 300);
-        handleIntent(getIntent());
+        Object retained = getLastNonConfigurationInstance();
+        final PlayerHandoff handoff =
+            retained instanceof PlayerHandoff ? (PlayerHandoff) retained : null;
+        // A configuration change (fold/unfold) reuses the original intent. Do
+        // not open the video again: the handoff below reattaches the player.
+        if (handoff == null && savedInstanceState == null) {
+            handleIntent(getIntent());
+        }
         lastDisplayId = currentDisplayId();
-        handler.postDelayed(new Runnable() {
-            @Override public void run() {
-                restorePlayerSession();
+        if (handoff != null) {
+            restoreRetainedPlayer(handoff);
+        } else {
+            handler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    restorePlayerSession();
+                }
+            }, 250);
+        }
+    }
+
+    @Override
+    public Object onRetainNonConfigurationInstance() {
+        if (isFinishing() || nativePlayer == null || TextUtils.isEmpty(currentFileId)) {
+            return null;
+        }
+        PlayerHandoff handoff = new PlayerHandoff();
+        handoff.fileId = currentFileId;
+        handoff.title = currentTitle;
+        handoff.playlistJson = playlistJson();
+        handoff.playlistIndex = playlistIndex;
+        handoff.fill = fillScreen;
+        handoff.local = playerIsLocal;
+        handoff.localUri = currentLocalUri == null ? null : currentLocalUri.toString();
+        handoff.nativePlayer = nativePlayer;
+        try {
+            double position = nativePlayer.currentPositionSeconds();
+            double duration = nativePlayer.durationSeconds();
+            if (duration > 1 && position > 0) {
+                libraryStore.saveProgress(currentFileId, currentTitle, position, duration);
             }
-        }, 250);
+        } catch (Exception ignored) {
+            // Progress is also saved when the player is closed.
+        }
+        handoff.videoView = nativePlayer.takeVideoView();
+        handoffPending = true;
+        // onDestroy must not release the player: the next activity owns it.
+        nativePlayer = null;
+        return handoff;
     }
 
     // ---------------------------------------------------------------------
@@ -439,6 +499,41 @@ public class MainActivity extends Activity {
         }
     }
 
+    /**
+     * Rebuilds the player chrome around a native player retained across a
+     * configuration change (fold/unfold to the cover display). Playback is not
+     * restarted: ExoPlayer keeps its position and audio, only the surface is
+     * attached to the new activity window.
+     */
+    private void restoreRetainedPlayer(PlayerHandoff handoff) {
+        if (handoff == null || handoff.nativePlayer == null ||
+            TextUtils.isEmpty(handoff.fileId)) {
+            return;
+        }
+        playerIsLocal = handoff.local;
+        currentFileId = handoff.fileId;
+        currentTitle = handoff.title;
+        currentLocalUri = TextUtils.isEmpty(handoff.localUri)
+            ? null : Uri.parse(handoff.localUri);
+        fillScreen = handoff.fill;
+        playlist = parsePlaylist(handoff.playlistJson, handoff.fileId, handoff.title);
+        playlistIndex = handoff.playlistIndex;
+        if (playlistIndex < 0 || playlistIndex >= playlist.size()) {
+            playlistIndex = Math.max(0, findPlaylistIndex(handoff.fileId));
+        }
+
+        buildPlayerShell();
+        attachRetainedNativeVideo(handoff);
+        buildPlayerOverlayPage(handoff.fileId, handoff.title, true);
+        resetPlayerState();
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        lastServicePlaying = true;
+        PlaybackService.rememberTitle(currentTitle);
+        PlaybackService.start(this, handoff.nativePlayer.isPlaying());
+        android.util.Log.d("DrivePlay", "retained player reattached "
+            + handoff.fileId + " playing=" + handoff.nativePlayer.isPlaying());
+    }
+
     private void showPlayer(String fileId, String title, String playlistJson) {
         if (TextUtils.isEmpty(fileId)) {
             toast("Link de vídeo inválido.");
@@ -525,7 +620,24 @@ public class MainActivity extends Activity {
         videoLayer.setBackgroundColor(Color.BLACK);
         playerOverlay.addView(videoLayer, match());
 
-        nativePlayer = new NativeVideoPlayer(this, videoLayer, new NativeVideoPlayer.Listener() {
+        nativePlayer = new NativeVideoPlayer(this, videoLayer, nativePlayerListener());
+        nativePlayer.setFill(fillScreen);
+    }
+
+    private void attachRetainedNativeVideo(PlayerHandoff handoff) {
+        FrameLayout videoLayer = new FrameLayout(this);
+        videoLayer.setBackgroundColor(Color.BLACK);
+        playerOverlay.addView(videoLayer, match());
+
+        nativePlayer = handoff.nativePlayer;
+        nativePlayer.updateContext(this);
+        nativePlayer.setListener(nativePlayerListener());
+        nativePlayer.attachTo(videoLayer);
+        nativePlayer.setFill(fillScreen);
+    }
+
+    private NativeVideoPlayer.Listener nativePlayerListener() {
+        return new NativeVideoPlayer.Listener() {
             @Override
             public void onState(final String json) {
                 if (playerView == null || TextUtils.isEmpty(json)) return;
@@ -553,11 +665,14 @@ public class MainActivity extends Activity {
                     }
                 });
             }
-        });
-        nativePlayer.setFill(fillScreen);
+        };
     }
 
     private void buildPlayerOverlayPage(String fileId, String title) {
+        buildPlayerOverlayPage(fileId, title, false);
+    }
+
+    private void buildPlayerOverlayPage(String fileId, String title, boolean skipResume) {
         playerView = new WebView(this);
         configureWebView(playerView, true);
         playerView.setBackgroundColor(Color.TRANSPARENT);
@@ -603,7 +718,7 @@ public class MainActivity extends Activity {
         });
 
         playerOverlay.addView(playerView, match());
-        playerView.loadUrl(playerPageUrl(false));
+        playerView.loadUrl(playerPageUrl(skipResume));
     }
 
     private String playerPageUrl(boolean skipResume) {
@@ -629,6 +744,54 @@ public class MainActivity extends Activity {
         playerView.setLayoutParams(match());
         playerView.requestLayout();
         playerView.loadUrl(playerPageUrl(true));
+    }
+
+    /**
+     * The WebView can keep the previous display's layout viewport after a
+     * fold/unfold. Reload only when innerWidth no longer matches the real
+     * view size; an unnecessary reload would restart the video chrome.
+     */
+    private void ensureBrowserViewports() {
+        checkViewport(appView, "file:///android_asset/index.html", false);
+        if (playerView != null) checkViewport(playerView, null, true);
+        if (localPlayerView != null) checkViewport(localPlayerView, null, false);
+    }
+
+    private void checkViewport(final WebView view, final String fallbackUrl,
+                               final boolean player) {
+        if (view == null) return;
+        final int widthPx = view.getWidth();
+        if (widthPx <= 0) return;
+        view.evaluateJavascript(
+            "({w:window.innerWidth,d:window.devicePixelRatio||1})",
+            new ValueCallback<String>() {
+                @Override public void onReceiveValue(String value) {
+                    if (destroyed || value == null) return;
+                    try {
+                        JSONObject json = new JSONObject(value);
+                        double inner = json.optDouble("w", 0);
+                        double dpr = json.optDouble("d", 1);
+                        if (dpr <= 0) dpr = 1;
+                        double expected = widthPx / dpr;
+                        if (inner <= 0 || expected <= 0) return;
+                        double tolerance = Math.max(14, expected * 0.08);
+                        if (Math.abs(inner - expected) <= tolerance) return;
+                        android.util.Log.d("DrivePlay", "viewport stale inner=" + inner
+                            + " expected=" + expected + " player=" + player);
+                        if (player) {
+                            if (playerView != null) {
+                                playerOverlayActive = false;
+                                playerView.setLayoutParams(match());
+                                playerView.loadUrl(playerPageUrl(true));
+                            }
+                        } else if (fallbackUrl != null) {
+                            view.loadUrl(fallbackUrl);
+                        }
+                    } catch (Exception ignored) {
+                        // If the page is not ready yet, try again on the next event.
+                    }
+                }
+            });
     }
 
     private void scheduleChromeReload(final int displayId) {
@@ -1156,6 +1319,7 @@ public class MainActivity extends Activity {
 
     private void closePlayer(boolean clearSession) {
         hideCustomViewInternal();
+        boolean keepForHandoff = handoffPending && !clearSession;
 
         if (!clearSession && nativePlayer != null && !TextUtils.isEmpty(currentFileId)) {
             double position = nativePlayer.currentPositionSeconds();
@@ -1170,7 +1334,7 @@ public class MainActivity extends Activity {
         }
 
         if (nativePlayer != null) {
-            nativePlayer.destroy();
+            if (!keepForHandoff) nativePlayer.destroy();
             nativePlayer = null;
         }
         if (playerOverlay != null) {
@@ -1217,7 +1381,7 @@ public class MainActivity extends Activity {
         customFullscreen = false;
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         lastServicePlaying = false;
-        PlaybackService.stop(this);
+        if (!keepForHandoff) PlaybackService.stop(this);
         if (clearSession) clearPlayerSession();
         showSystemBars();
         if (root != null) root.requestApplyInsets();
@@ -1938,18 +2102,25 @@ public class MainActivity extends Activity {
         if (playerView != null) playerView.onResume();
         if (localPlayerView != null) localPlayerView.onResume();
         int displayId = currentDisplayId();
+        boolean displayChanged = displayId != lastDisplayId;
         if (playerOverlay != null) {
             if (root != null) root.setPadding(0, 0, 0, 0);
             hideSystemBars();
             if (nativePlayer != null) {
-                if (displayId != lastDisplayId) {
+                if (displayChanged) {
                     nativePlayer.forceSurfaceRefresh();
                     forceBrowserLayout();
-                    scheduleChromeReload(displayId);
                 } else {
                     nativePlayer.refreshSurface();
                 }
             }
+        }
+        if (displayChanged) {
+            handler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    ensureBrowserViewports();
+                }
+            }, 320);
         }
         lastDisplayId = displayId;
         handler.postDelayed(new Runnable() {
@@ -1993,15 +2164,15 @@ public class MainActivity extends Activity {
             nativePlayer.onSizeChanged();
         }
         if (displayChanged) {
-            scheduleChromeReload(displayId);
             handler.postDelayed(new Runnable() {
                 @Override public void run() {
                     if (destroyed) return;
                     applyCoverMode();
                     forceBrowserLayout();
                     if (nativePlayer != null) nativePlayer.onSizeChanged();
+                    ensureBrowserViewports();
                 }
-            }, 260);
+            }, 320);
         }
         lastDisplayId = displayId;
     }
@@ -2018,7 +2189,7 @@ public class MainActivity extends Activity {
         }
         closePlayer(isFinishing());
         PlaybackService.detach(this);
-        PlaybackService.stop(this);
+        if (!handoffPending) PlaybackService.stop(this);
         if (io != null) io.shutdownNow();
         if (appView != null) {
             appView.destroy();

@@ -71,9 +71,9 @@ final class NativeVideoPlayer {
         void onInfo(String message);
     }
 
-    private final Context context;
-    private final FrameLayout layer;
-    private final Listener listener;
+    private Context context;
+    private FrameLayout layer;
+    private Listener listener;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService io = Executors.newSingleThreadExecutor();
 
@@ -149,16 +149,25 @@ final class NativeVideoPlayer {
         this.layer = layer;
         this.listener = listener;
         this.currentListener = listener;
-        layer.setClipChildren(true);
-        layer.setBackgroundColor(0xFF000000);
-        layer.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
+        prepareLayer(layer);
+        videoView = createVideoView();
+        layer.addView(videoView);
+    }
+
+    private void prepareLayer(final FrameLayout target) {
+        target.setClipChildren(true);
+        target.setBackgroundColor(0xFF000000);
+        target.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
             @Override public void onLayoutChange(View view, int left, int top, int right, int bottom,
                                                  int oldLeft, int oldTop, int oldRight, int oldBottom) {
                 layoutVideo();
             }
         });
-        videoView = new TextureView(context);
-        videoView.setLayoutParams(new FrameLayout.LayoutParams(
+    }
+
+    private TextureView createVideoView() {
+        TextureView view = new TextureView(context);
+        view.setLayoutParams(new FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
             Gravity.CENTER
@@ -166,7 +175,7 @@ final class NativeVideoPlayer {
         // ExoPlayer keeps a Surface; when the phone moves to the cover display
         // (or the window is recreated) the SurfaceTexture is destroyed and must
         // be re-attached, otherwise the video stays black with audio only.
-        videoView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
+        view.setSurfaceTextureListener(new TextureView.SurfaceTextureListener() {
             @Override public void onSurfaceTextureAvailable(SurfaceTexture texture, int width, int height) {
                 attachSurface(texture);
             }
@@ -184,7 +193,43 @@ final class NativeVideoPlayer {
                 // Frames are rendered by ExoPlayer.
             }
         });
-        layer.addView(videoView);
+        return view;
+    }
+
+    void setListener(Listener value) {
+        listener = value;
+        currentListener = value;
+    }
+
+    /** The player outlives the activity, so rebuilds must use the new one. */
+    void updateContext(Context value) {
+        if (value != null) context = value;
+    }
+
+    /**
+     * Removes the video view from the old activity without releasing the
+     * player. The next activity reattaches it, so audio and position survive a
+     * fold/unfold configuration change.
+     */
+    View takeVideoView() {
+        if (videoView != null && videoView.getParent() instanceof ViewGroup) {
+            ((ViewGroup) videoView.getParent()).removeView(videoView);
+        }
+        return videoView;
+    }
+
+    /** Reattaches a retained video view to the new activity's video layer. */
+    void attachTo(FrameLayout newLayer) {
+        layer = newLayer;
+        prepareLayer(newLayer);
+        if (videoView == null) {
+            videoView = createVideoView();
+        } else if (videoView.getParent() instanceof ViewGroup) {
+            ((ViewGroup) videoView.getParent()).removeView(videoView);
+        }
+        newLayer.addView(videoView);
+        videoView.requestLayout();
+        layoutVideo();
     }
 
     private void attachSurface(SurfaceTexture texture) {

@@ -30,6 +30,16 @@
             android:screenOrientation="fullSensor"
             android:windowSoftInputMode="adjustResize">
 
+            <!--
+                Tells the platform (and Samsung's FlipSizeCompatPolicy) that the
+                activity can be resized when the phone folds/unfolds. Without
+                this metadata the task stays in a cover-sized compatibility
+                sandbox after moving to the inner display.
+            -->
+            <meta-data
+                android:name="android.supports_size_changes"
+                android:value="true" />
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
