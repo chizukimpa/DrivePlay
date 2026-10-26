@@ -103,6 +103,9 @@ public class MainActivity extends Activity {
     private static String lastRelaunchKey = "";
     /** Set between onRetainNonConfigurationInstance and onDestroy. */
     private boolean handoffPending;
+    /** Handoff used by the CLEAR_TASK full-window relaunch. */
+    private boolean relaunchHandoff;
+    private static PlayerHandoff pendingHandoff;
 
     /**
      * Keeps the native player (and its audio) alive while Samsung recreates the
@@ -231,8 +234,10 @@ public class MainActivity extends Activity {
             }
         }, 300);
         Object retained = getLastNonConfigurationInstance();
-        final PlayerHandoff handoff =
-            retained instanceof PlayerHandoff ? (PlayerHandoff) retained : null;
+        PlayerHandoff selected =
+            retained instanceof PlayerHandoff ? (PlayerHandoff) retained : pendingHandoff;
+        pendingHandoff = null;
+        final PlayerHandoff handoff = selected;
         // A configuration change (fold/unfold) reuses the original intent. Do
         // not open the video again: the handoff below reattaches the player.
         if (handoff == null && savedInstanceState == null) {
@@ -261,6 +266,11 @@ public class MainActivity extends Activity {
         if (isFinishing() || nativePlayer == null || TextUtils.isEmpty(currentFileId)) {
             return null;
         }
+        return captureHandoff();
+    }
+
+    private PlayerHandoff captureHandoff() {
+        if (nativePlayer == null || TextUtils.isEmpty(currentFileId)) return null;
         PlayerHandoff handoff = new PlayerHandoff();
         handoff.fileId = currentFileId;
         handoff.title = currentTitle;
@@ -438,8 +448,7 @@ public class MainActivity extends Activity {
             if (!tooSmall) return;
             String sizeKey = display.getDisplayId() + ":size "
                 + current.width() + "x" + current.height();
-            if (sizeKey.equals(lastRecreateKey) && lastRecreateCount >= 1 &&
-                playerOverlay == null) {
+            if (sizeKey.equals(lastRecreateKey) && lastRecreateCount >= 1) {
                 // Recreating did not make the task fill the panel. Start a new
                 // task with explicit full-display bounds instead.
                 if (!sizeKey.equals(lastRelaunchKey)) {
@@ -484,7 +493,17 @@ public class MainActivity extends Activity {
     }
 
     private void relaunchFullWindow(int displayId, int width, int height) {
-        if (destroyed || isFinishing() || playerOverlay != null) return;
+        if (destroyed || isFinishing()) return;
+        // A preview player has no native handoff; clearing the task would
+        // close it. Keep the preview and let recreate() handle the layout.
+        if (playerOverlay != null &&
+            (nativePlayer == null || TextUtils.isEmpty(currentFileId))) {
+            return;
+        }
+        if (nativePlayer != null && !TextUtils.isEmpty(currentFileId)) {
+            pendingHandoff = captureHandoff();
+            relaunchHandoff = true;
+        }
         try {
             Intent intent = new Intent(this, MainActivity.class);
             intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
@@ -663,6 +682,7 @@ public class MainActivity extends Activity {
         if (playlistIndex < 0 || playlistIndex >= playlist.size()) {
             playlistIndex = Math.max(0, findPlaylistIndex(handoff.fileId));
         }
+        savePlayerSession();
 
         buildPlayerShell();
         attachRetainedNativeVideo(handoff);
@@ -931,8 +951,7 @@ public class MainActivity extends Activity {
             String reason = "webview size " + width + "x" + height
                 + " window " + window.width() + "x" + window.height();
             String key = displayId + ":" + reason;
-            if (key.equals(lastRecreateKey) && lastRecreateCount >= 1 &&
-                playerOverlay == null) {
+            if (key.equals(lastRecreateKey) && lastRecreateCount >= 1) {
                 if (!key.equals(lastRelaunchKey)) {
                     lastRelaunchKey = key;
                     int panelWidth = window.width();
@@ -1527,7 +1546,7 @@ public class MainActivity extends Activity {
 
     private void closePlayer(boolean clearSession) {
         hideCustomViewInternal();
-        boolean keepForHandoff = handoffPending && !clearSession;
+        boolean keepForHandoff = handoffPending && (!clearSession || relaunchHandoff);
 
         if (!clearSession && nativePlayer != null && !TextUtils.isEmpty(currentFileId)) {
             double position = nativePlayer.currentPositionSeconds();
