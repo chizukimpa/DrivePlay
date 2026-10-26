@@ -1497,7 +1497,7 @@ public class MainActivity extends Activity {
         playerIsLocal = true;
         currentLocalUri = uri;
         currentFileId = "local:" + Integer.toHexString(uri.toString().hashCode());
-        currentTitle = cleanTitle(title, "Vídeo local");
+        currentTitle = MediaTitle.format(title, "");
         rememberLocalUri(currentFileId, uri);
         fillScreen = readFillScreen(settingsJson);
         playlist = new ArrayList<>();
