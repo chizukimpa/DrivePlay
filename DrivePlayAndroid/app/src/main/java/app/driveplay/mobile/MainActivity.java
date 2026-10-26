@@ -443,7 +443,7 @@ public class MainActivity extends Activity {
         // The activity configuration can lag during a fold, and the window
         // metrics can be a cover-sized sandbox.
         try {
-            int id = windowDisplayId();
+            int id = effectiveDisplayId();
             if (id >= 0) {
                 android.hardware.display.DisplayManager manager =
                     (android.hardware.display.DisplayManager)
@@ -471,14 +471,14 @@ public class MainActivity extends Activity {
      * display, so it is the target for followDisplayIfNeeded().
      */
     private boolean desiredCoverPanel() {
-        // The activity display is the panel the system believes the app is on;
-        // it is the most reliable target during a fold, even when the task
-        // window itself was left on the other display.
-        Boolean physical = physicalCoverPanelOrNull();
-        if (physical != null) return physical;
+        // The activity configuration is the fold target even when the task
+        // window was left on the other display. This is what separates the
+        // "black cover" case (config cover, task left on inner) from the
+        // "cover-sized window on inner" case (config inner, task on inner).
         if (configCoverPanel()) return true;
         if (configInnerPanel()) return false;
-        return false;
+        Boolean physical = physicalCoverPanelOrNull();
+        return physical != null && physical;
     }
 
     /**
@@ -490,9 +490,16 @@ public class MainActivity extends Activity {
     private void ensureFullWindow() {
         if (destroyed || isFinishing() || isChangingConfigurations()) return;
         if (Build.VERSION.SDK_INT < 30 || isInMultiWindowMode()) return;
+        // The layout/follow logic already knows whether the window is on the
+        // cover. Only the inner panel needs the full-window treatment.
         if (isCoverScreen()) return;
         try {
-            android.view.Display display = getDisplay();
+            int displayId = effectiveDisplayId();
+            if (displayId < 0) return;
+            android.hardware.display.DisplayManager manager =
+                (android.hardware.display.DisplayManager)
+                    getSystemService(android.content.Context.DISPLAY_SERVICE);
+            android.view.Display display = manager == null ? null : manager.getDisplay(displayId);
             if (display == null) return;
             android.view.Display.Mode mode = display.getMode();
             int panelWidth = mode.getPhysicalWidth();
@@ -503,22 +510,26 @@ public class MainActivity extends Activity {
                 current.width() <= 0 || current.height() <= 0) {
                 return;
             }
-            boolean tooSmall = current.width() < panelWidth * 0.9
-                && current.height() < panelHeight * 0.9;
-            if (!tooSmall) return;
-            String sizeKey = display.getDisplayId() + ":size "
+            int toleranceW = Math.max(60, panelWidth / 10);
+            int toleranceH = Math.max(120, panelHeight / 10);
+            boolean portrait = Math.abs(current.width() - panelWidth) <= toleranceW
+                && Math.abs(current.height() - panelHeight) <= toleranceH;
+            boolean landscape = Math.abs(current.width() - panelHeight) <= toleranceW
+                && Math.abs(current.height() - panelWidth) <= toleranceH;
+            if (portrait || landscape) return;
+            String sizeKey = displayId + ":size "
                 + current.width() + "x" + current.height();
             if (sizeKey.equals(lastRecreateKey) && lastRecreateCount >= 1) {
                 // Recreating did not make the task fill the panel. Start a new
                 // task with explicit full-display bounds instead.
                 if (!sizeKey.equals(lastRelaunchKey)) {
                     lastRelaunchKey = sizeKey;
-                    relaunchFullWindow(display.getDisplayId(), panelWidth, panelHeight);
+                    relaunchFullWindow(displayId, panelWidth, panelHeight);
                 }
                 return;
             }
             requestWindowRecreate("size " + current.width() + "x" + current.height(),
-                display.getDisplayId());
+                displayId);
         } catch (Exception ignored) {
             // If the metrics are unavailable, keep the current window.
         }
@@ -579,6 +590,15 @@ public class MainActivity extends Activity {
         }
     }
 
+    private int effectiveDisplayId() {
+        int window = windowDisplayId();
+        int activity = currentDisplayId();
+        int id = window >= 0 ? window : activity;
+        android.util.Log.d("DrivePlay", "display ids window=" + window
+            + " activity=" + activity + " using=" + id);
+        return id;
+    }
+
     private int windowDisplayId() {
         try {
             android.view.Display display = getWindow().getDecorView().getDisplay();
@@ -630,7 +650,7 @@ public class MainActivity extends Activity {
         }
         boolean cover = desiredCoverPanel();
         int target = findDisplayIdForPanel(cover);
-        int current = windowDisplayId();
+        int current = effectiveDisplayId();
         android.util.Log.d("DrivePlay", "follow check cover=" + cover
             + " target=" + target + " current=" + current);
         if (target < 0 || current < 0 || target == current) return;
@@ -1092,7 +1112,7 @@ public class MainActivity extends Activity {
                 && Math.abs(height - window.height()) <= toleranceH) {
                 return true;
             }
-            int displayId = currentDisplayId();
+            int displayId = effectiveDisplayId();
             String reason = "webview size " + width + "x" + height
                 + " window " + window.width() + "x" + window.height();
             String key = displayId + ":" + reason;
@@ -1102,7 +1122,11 @@ public class MainActivity extends Activity {
                     int panelWidth = window.width();
                     int panelHeight = window.height();
                     try {
-                        android.view.Display display = getDisplay();
+                        android.hardware.display.DisplayManager manager =
+                            (android.hardware.display.DisplayManager)
+                                getSystemService(android.content.Context.DISPLAY_SERVICE);
+                        android.view.Display display = manager == null
+                            ? null : manager.getDisplay(displayId);
                         if (display != null) {
                             panelWidth = display.getMode().getPhysicalWidth();
                             panelHeight = display.getMode().getPhysicalHeight();
