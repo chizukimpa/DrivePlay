@@ -1387,3 +1387,34 @@ body.cover .ep-menu {
     transition-duration: 0.01ms !important;
   }
 }
+
+.api-key-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.api-key-field input {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  padding: 0 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--bg-soft);
+  color: var(--text);
+  font-size: 12.5px;
+  outline: none;
+}
+
+.api-key-field input:focus {
+  border-color: rgba(91, 130, 255, 0.65);
+}
+
+.api-key-field .btn {
+  flex: none;
+  min-height: 40px;
+  padding: 0 13px;
+}

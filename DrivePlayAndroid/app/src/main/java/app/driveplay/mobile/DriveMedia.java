@@ -28,6 +28,7 @@ final class DriveMedia {
     private static final long CACHE_FAIL_MS = 30 * 1000L;
     private static final Pattern CONFIRM = Pattern.compile("name=\"confirm\"\\s+value=\"([^\"]+)\"");
     private static final Pattern UUID = Pattern.compile("name=\"uuid\"\\s+value=\"([^\"]+)\"");
+    private static String apiKey = "";
     private static final java.util.LinkedHashMap<String, CachedResult> CACHE =
         new java.util.LinkedHashMap<String, CachedResult>(16, 0.75f, true) {
             @Override
@@ -37,6 +38,14 @@ final class DriveMedia {
         };
 
     private DriveMedia() {}
+
+    static void setApiKey(String key) {
+        apiKey = key == null ? "" : key.trim();
+    }
+
+    static String apiKey() {
+        return apiKey;
+    }
 
     static final class Result {
         String url;
@@ -73,7 +82,8 @@ final class DriveMedia {
             return result;
         }
 
-        String cacheKey = fileId + "|" + (cookie == null ? "" : cookie.hashCode());
+        String cacheKey = fileId + "|" + (cookie == null ? "" : cookie.hashCode())
+            + "|" + apiKey.hashCode();
         long now = android.os.SystemClock.elapsedRealtime();
         synchronized (CACHE) {
             CachedResult cached = CACHE.get(cacheKey);
@@ -93,7 +103,12 @@ final class DriveMedia {
     }
 
     private static Result resolveUncached(String fileId, String cookie) {
-        Result result = new Result();
+        Result result = resolveViaApi(fileId);
+        if (result != null && result.error == null && !TextUtils.isEmpty(result.url)) {
+            android.util.Log.d("DrivePlay", "resolve via Drive API ok");
+            return result;
+        }
+        result = new Result();
         try {
             String url = "https://drive.google.com/uc?export=download&id=" + fileId;
             android.util.Log.d("DrivePlay", "resolve start " + fileId);
@@ -178,6 +193,66 @@ final class DriveMedia {
             android.util.Log.d("DrivePlay", "resolve exception " + result.error);
             return result;
         }
+    }
+
+    /**
+     * Uses the official Drive API with an API key (created in Google Cloud).
+     * This has its own project quota, so it is not affected by the anonymous
+     * "too many users" download limit of the web endpoint. It works for files
+     * shared with "anyone with the link", which is the case of the app folders.
+     */
+    private static Result resolveViaApi(String fileId) {
+        if (TextUtils.isEmpty(apiKey)) return null;
+        Result result = new Result();
+        HttpURLConnection connection = null;
+        try {
+            String url = "https://www.googleapis.com/drive/v3/files/" + fileId
+                + "?alt=media&supportsAllDrives=true&key="
+                + java.net.URLEncoder.encode(apiKey, "UTF-8");
+            connection = (HttpURLConnection) new URL(url).openConnection();
+            connection.setInstanceFollowRedirects(true);
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(20000);
+            connection.setRequestProperty("User-Agent", UA);
+            connection.setRequestProperty("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8");
+            connection.setRequestProperty("Range", "bytes=0-2047");
+            int status = connection.getResponseCode();
+            String type = connection.getContentType();
+            android.util.Log.d("DrivePlay", "Drive API status=" + status + " type=" + type);
+            if (status >= 200 && status < 400
+                && (type == null || !type.contains("text/html"))) {
+                byte[] head = readBytes(connection, 2048);
+                if (looksLikeMedia(head) || (type != null && type.startsWith("video/"))) {
+                    result.url = connection.getURL().toString();
+                    result.contentType = type;
+                    result.rangeSupported = status == 206;
+                    String range = connection.getHeaderField("Content-Range");
+                    String length = connection.getHeaderField("Content-Length");
+                    if (range != null) {
+                        int slash = range.lastIndexOf('/');
+                        if (slash > 0) {
+                            try { result.length = Long.parseLong(range.substring(slash + 1)); }
+                            catch (NumberFormatException ignored) {}
+                        }
+                    } else if (length != null) {
+                        try { result.length = Long.parseLong(length); }
+                        catch (NumberFormatException ignored) {}
+                    }
+                    android.util.Log.d("DrivePlay", "Drive API ok len=" + result.length
+                        + " range=" + result.rangeSupported);
+                    return result;
+                }
+            }
+            result.error = "API HTTP " + status;
+        } catch (Exception error) {
+            result.error = error.getClass().getSimpleName() + ": " + error.getMessage();
+            android.util.Log.d("DrivePlay", "Drive API exception " + result.error);
+        } finally {
+            if (connection != null) {
+                try { connection.disconnect(); } catch (Exception ignored) {}
+            }
+        }
+        return result;
     }
 
     /** Explains the HTML pages Drive returns instead of the file. */

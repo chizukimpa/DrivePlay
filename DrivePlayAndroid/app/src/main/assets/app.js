@@ -19,7 +19,8 @@
     subtitleColor: "#ffffff",
     subtitleOutline: true,
     subtitleFont: "sans",
-    subtitleBackground: true
+    subtitleBackground: true,
+    driveApiKey: ""
   };
 
   var state = {
@@ -356,6 +357,9 @@
       ? source.subtitleFont : "sans";
     settings.subtitleBackground = source.subtitleBackground !== false;
     settings.subtitleVersion = clampNumber(source.subtitleVersion, 0, 0, 99);
+    settings.driveApiKey = typeof source.driveApiKey === "string"
+      ? source.driveApiKey.trim()
+      : "";
     return settings;
   }
 
@@ -1977,6 +1981,8 @@
       ending.value = String(state.settings.endingSeconds);
       ending.disabled = !state.settings.skipEnding;
     }
+    var apiKeyInput = $("#driveApiKeyInput");
+    if (apiKeyInput) apiKeyInput.value = state.settings.driveApiKey || "";
   }
 
   function bindSettings() {
@@ -2016,6 +2022,26 @@
         syncSettings();
       });
     }
+
+    var apiKeyInput = $("#driveApiKeyInput");
+    var apiKeySave = $("#driveApiKeySave");
+    if (apiKeySave) {
+      apiKeySave.addEventListener("click", function () {
+        state.settings.driveApiKey = apiKeyInput ? apiKeyInput.value.trim() : "";
+        saveSettings();
+        syncSettings();
+        toast(state.settings.driveApiKey
+          ? "Chave salva. Abra o vídeo para tentar o arquivo original."
+          : "Chave removida. O app usa o preview do Drive.");
+      });
+    }
+    if (apiKeyInput) {
+      apiKeyInput.addEventListener("keydown", function (event) {
+        if (event.key !== "Enter") return;
+        event.preventDefault();
+        if (apiKeySave) apiKeySave.click();
+      });
+    }
   }
 
   /* ------------------------------------------------------------------ ui */
@@ -2025,16 +2051,6 @@
     $("#pasteBtn").addEventListener("click", pasteLink);
     $("#localBtn").addEventListener("click", pickLocalVideo);
     $("#settingsBtn").addEventListener("click", function () { navigateRoot("settings"); });
-    var googleLoginBtn = $("#googleLoginBtn");
-    if (googleLoginBtn) {
-      googleLoginBtn.addEventListener("click", function () {
-        if (window.Android && typeof window.Android.openGoogleLogin === "function") {
-          window.Android.openGoogleLogin();
-        } else {
-          toast("Login disponível no app Android.");
-        }
-      });
-    }
     $("#newCollectionBtn").addEventListener("click", createCollectionFlow);
     $("#addCollectionBtn").addEventListener("click", createCollectionFlow);
     $("#createCollectionBtn").addEventListener("click", createCollectionFlow);

@@ -583,7 +583,7 @@ ipcMain.handle('native:prepare', async (_event, payload) => {
       if (!/^[A-Za-z0-9_-]{10,}$/.test(fileId)) {
         return { ok: false, error: 'ID de arquivo inválido.' };
       }
-      const resolved = await desktopMedia.resolveDrive(fileId);
+      const resolved = await desktopMedia.resolveDrive(fileId, String(data.apiKey || '').trim());
       if (resolved.error) return { ok: false, error: resolved.error };
       key = nativeKey('drive:' + fileId);
       const name = title || fileId;

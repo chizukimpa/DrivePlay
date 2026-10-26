@@ -109,7 +109,82 @@ function htmlError(html) {
   return 'O Google Drive devolveu uma página em vez do vídeo.';
 }
 
-async function resolveDrive(fileId) {
+function looksLikeMedia(buffer) {
+  if (!buffer || buffer.length < 12) return false;
+  if (buffer[0] === 0x1a && buffer[1] === 0x45 && buffer[2] === 0xdf && buffer[3] === 0xa3) return true;
+  if (buffer.slice(4, 8).toString() === 'ftyp') return true;
+  if (buffer.slice(0, 4).toString() === 'RIFF' && buffer.slice(8, 12).toString() === 'AVI ') return true;
+  if (buffer[0] === 0x47) return true;
+  if (buffer.slice(0, 3).toString() === 'FLV') return true;
+  return false;
+}
+
+/**
+ * Official Drive API with an API key. It uses the key project's quota, so it
+ * is not affected by the anonymous "too many users" download limit. Works for
+ * files shared with "anyone with the link".
+ */
+async function resolveViaApi(fileId, apiKey) {
+  if (!apiKey) return null;
+  const ses = session.fromPartition(PARTITION);
+  const url = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId)
+    + '?alt=media&supportsAllDrives=true&key=' + encodeURIComponent(apiKey);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 9000);
+  try {
+    const response = await ses.fetch(url, {
+      redirect: 'follow',
+      signal: controller.signal,
+      headers: {
+        'User-Agent': USER_AGENT,
+        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+        Range: 'bytes=0-2047',
+      },
+    });
+    const type = String(response.headers.get('content-type') || '').toLowerCase();
+    if (response.status >= 400) {
+      try { await response.arrayBuffer(); } catch (_) {}
+      return null;
+    }
+    if (type.includes('text/html') || type.includes('application/json')) return null;
+
+    const contentRange = response.headers.get('content-range') || '';
+    const contentLength = parseInt(response.headers.get('content-length') || '', 10);
+    let media;
+    if (response.status === 206 || (Number.isFinite(contentLength) && contentLength <= 65536)) {
+      const head = Buffer.from(await response.arrayBuffer());
+      media = looksLikeMedia(head) || type.startsWith('video/');
+    } else {
+      media = type.startsWith('video/') || type === 'application/octet-stream' || !type;
+      try { if (response.body) response.body.cancel(); } catch (_) {}
+    }
+    if (!media) return null;
+
+    let length = -1;
+    if (contentRange.includes('/')) {
+      const total = parseInt(contentRange.split('/').pop(), 10);
+      if (Number.isFinite(total)) length = total;
+    } else if (Number.isFinite(contentLength) && contentLength > 65536) {
+      length = contentLength;
+    }
+    return {
+      url: response.url || url,
+      contentType: type || 'application/octet-stream',
+      length,
+    };
+  } catch (error) {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function resolveDrive(fileId, apiKey) {
+  if (apiKey) {
+    const viaApi = await resolveViaApi(fileId, apiKey);
+    if (viaApi) return viaApi;
+  }
+
   const ses = session.fromPartition(PARTITION);
   let url = 'https://drive.google.com/uc?export=download&id=' + encodeURIComponent(fileId);
 

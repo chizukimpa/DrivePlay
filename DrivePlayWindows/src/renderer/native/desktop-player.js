@@ -316,7 +316,11 @@
   function startPrepare() {
     if (preparing) return;
     preparing = true;
-    api.prepare({ fileId: id, title: title }).then(function (info) {
+    api.prepare({
+      fileId: id,
+      title: title,
+      apiKey: (settings && settings.driveApiKey) || ""
+    }).then(function (info) {
       if (!info || info.ok !== true) {
         var message = (info && info.error) || "Não foi possível preparar o vídeo.";
         if (player) player.showError(message);

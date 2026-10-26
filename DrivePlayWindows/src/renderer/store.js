@@ -15,6 +15,7 @@ export const DEFAULT_SETTINGS = {
   subtitleOutline: true,
   subtitleFont: 'sans',
   subtitleBackground: true,
+  driveApiKey: '',
   libraryMode: false,
   selectedCollectionID: null,
   lastFolderID: null,
@@ -77,6 +78,7 @@ export function normalizeSettings(raw) {
       input.subtitleBackground == null
         ? DEFAULT_SETTINGS.subtitleBackground
         : !!input.subtitleBackground,
+    driveApiKey: typeof input.driveApiKey === 'string' ? input.driveApiKey.trim() : '',
     libraryMode: !!input.libraryMode,
     selectedCollectionID:
       typeof input.selectedCollectionID === 'string' ? input.selectedCollectionID : null,

@@ -139,6 +139,7 @@ public class MainActivity extends Activity {
         }
         libraryStore = new LibraryStore(prefs());
         settingsJson = prefs().getString("settings", "{}");
+        applyDriveApiKey(settingsJson);
         fillScreen = readFillScreen(settingsJson);
         coverMode = isCoverScreen();
 
@@ -463,6 +464,14 @@ public class MainActivity extends Activity {
 
         String cookie = DriveMedia.loginCookie();
         nativePlayer.open(fileId, currentTitle, cookie);
+    }
+
+    private void applyDriveApiKey(String json) {
+        try {
+            DriveMedia.setApiKey(new JSONObject(json).optString("driveApiKey", ""));
+        } catch (Exception ignored) {
+            DriveMedia.setApiKey("");
+        }
     }
 
     private void requestNotificationPermission() {
@@ -1236,11 +1245,11 @@ public class MainActivity extends Activity {
             new AlertDialog.Builder(this)
                 .setTitle("Drive no limite de downloads")
                 .setMessage("O preview do Drive tem só uma faixa de áudio e não tem legendas. "
-                    + "Entre na sua conta Google para o app baixar o arquivo original, "
-                    + "com todas as faixas e legendas.")
-                .setPositiveButton("Entrar na conta", new android.content.DialogInterface.OnClickListener() {
+                    + "Com uma chave da API do Google Drive, o app baixa o arquivo original, "
+                    + "com todas as faixas e legendas. A chave é gratuita e usa a cota do seu projeto.")
+                .setPositiveButton("Configurar chave", new android.content.DialogInterface.OnClickListener() {
                     @Override public void onClick(android.content.DialogInterface dialog, int which) {
-                        showGoogleLogin();
+                        promptDriveApiKey();
                     }
                 })
                 .setNegativeButton("Usar preview", null)
@@ -1248,6 +1257,42 @@ public class MainActivity extends Activity {
         } catch (Exception ignored) {
             // The player keeps working in preview mode.
         }
+    }
+
+    private void promptDriveApiKey() {
+        if (destroyed) return;
+        final android.widget.EditText input = new android.widget.EditText(this);
+        input.setSingleLine(true);
+        input.setText(DriveMedia.apiKey());
+        input.setHint("AIza...");
+
+        FrameLayout wrap = new FrameLayout(this);
+        int pad = dp(18);
+        wrap.setPadding(pad, dp(6), pad, 0);
+        wrap.addView(input, new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+        new AlertDialog.Builder(this)
+            .setTitle("Chave da API do Google Drive")
+            .setMessage("Crie a chave em console.cloud.google.com → APIs e serviços → "
+                + "Credenciais (ative antes a Google Drive API). Ela libera o arquivo "
+                + "original do Drive com todas as faixas de áudio e legendas.")
+            .setView(wrap)
+            .setPositiveButton("Salvar", new android.content.DialogInterface.OnClickListener() {
+                @Override public void onClick(android.content.DialogInterface dialog, int which) {
+                    String key = input.getText().toString().trim();
+                    try {
+                        JSONObject object = new JSONObject(settingsJson);
+                        object.put("driveApiKey", key);
+                        applySettings(object.toString());
+                    } catch (Exception ignored) {}
+                    if (!TextUtils.isEmpty(currentFileId)) {
+                        loadPlayerFile(currentFileId, currentTitle);
+                    }
+                }
+            })
+            .setNegativeButton("Cancelar", null)
+            .show();
     }
 
     private boolean loginHostAllowed(String host) {
@@ -1630,6 +1675,7 @@ public class MainActivity extends Activity {
     private void applySettings(String json) {
         if (json == null || json.isEmpty()) return;
         settingsJson = json;
+        applyDriveApiKey(settingsJson);
         fillScreen = readFillScreen(settingsJson);
         prefs().edit().putString("settings", settingsJson).apply();
         updateFillButton();

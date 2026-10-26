@@ -182,6 +182,11 @@ entre na sua conta pelo menu **Arquivo → Entrar na conta Google…**; a sessã
 salva para as próximas vezes e libera o arquivo original (com todas as faixas e
 legendas) quando o download anônimo está limitado.
 
+Se o Google bloquear o login no navegador embutido, use a **chave da API do Drive**:
+em **Ctrl+, → Google Drive → Chave da API do Drive**, cole uma chave criada em
+`https://console.cloud.google.com/apis/credentials` com a **Google Drive API**
+ativada. A chave usa a cota do seu projeto, separada da cota anônima do site.
+
 O player integrado pede ao Drive o **arquivo original** (com todas as faixas). Se o
 Drive responder com a página de **“Limite ultrapassado”**, o app não insiste: abre o
 preview do Drive e avisa. Nesse modo o Google transcodifica o vídeo no servidor,

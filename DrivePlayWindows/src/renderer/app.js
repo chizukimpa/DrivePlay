@@ -559,6 +559,15 @@ function settingsPopoverHTML() {
     ${toggleRowHTML('showSkipButtons', 'Mostrar botões de pular', settings.showSkipButtons)}
     ${toggleRowHTML('autoFullscreen', 'Entrar em tela cheia do vídeo após 5 s sem atividade', settings.autoFullscreen)}
 
+    <div class="popover-divider"></div>
+
+    <div class="popover-title">Google Drive</div>
+    <div class="api-key-row">
+      <input id="drive-api-key" type="password" autocomplete="off" spellcheck="false" placeholder="Chave da API do Drive (opcional)" value="${escapeHTML(settings.driveApiKey || '')}">
+    </div>
+    <button type="button" class="secondary-btn api-key-save" id="drive-api-key-save">Salvar chave</button>
+    <div class="popover-note">Crie a chave em console.cloud.google.com → Credenciais (ative a Google Drive API). Ela libera o arquivo original com todas as faixas de áudio e legendas quando a cota anônima do Drive bloqueia.</div>
+
     <div class="popover-note">As escolhas ficam salvas. O botão “Pular” na barra inferior indica quando o pulo automático está ativo. Depois de sair manualmente da tela cheia, ela volta a entrar apenas no próximo episódio.</div>
   `;
 }
@@ -614,6 +623,22 @@ function bindSettingsPopover(popover) {
       updateSkipButtons();
     });
   });
+
+  const apiKeyInput = popover.querySelector('#drive-api-key');
+  const apiKeySave = popover.querySelector('#drive-api-key-save');
+  if (apiKeySave) {
+    apiKeySave.addEventListener('click', () => {
+      state.settings.driveApiKey = apiKeyInput ? apiKeyInput.value.trim() : '';
+      persistSettings(true);
+      closePopover();
+      showToast(
+        state.settings.driveApiKey
+          ? 'Chave salva. Abrindo o vídeo novamente…'
+          : 'Chave removida. O app usa o preview do Drive.'
+      );
+      if (state.currentID) openFile(state.currentID, state.currentTitle);
+    });
+  }
 }
 
 function updateStepperState(popover) {
@@ -1797,6 +1822,7 @@ function nativePlayerSettings() {
     subtitleOutline: settings.subtitleOutline,
     subtitleFont: settings.subtitleFont,
     subtitleBackground: settings.subtitleBackground,
+    driveApiKey: settings.driveApiKey,
   };
 }
 
@@ -2404,7 +2430,7 @@ function handleNativeEvent(event) {
       loadPlayer(id, { mode: 'preview' });
       showToast(
         /limite|quota|downloads/i.test(reason)
-          ? 'Drive no limite — entre na conta Google no menu Arquivo para liberar o original.'
+          ? 'Drive no limite — configure a chave da API do Drive (Ctrl+,) para liberar o original.'
           : 'Reproduzindo no player do Drive (compatibilidade).'
       );
       renderAll();

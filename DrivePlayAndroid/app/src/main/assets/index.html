@@ -239,13 +239,16 @@
         </div>
 
         <div class="settings-card">
-          <button class="settings-action" id="googleLoginBtn" type="button">
-            <span>
-              <strong>Conta Google</strong>
-              <em>Entre para baixar o arquivo original do Drive, com todas as faixas de áudio e legendas.</em>
-            </span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg>
-          </button>
+          <div class="setting-row">
+            <div class="setting-label">
+              <strong>Chave da API do Drive</strong>
+              <span>Opcional: libera o arquivo original (todas as faixas e legendas) quando a cota anônima do Drive bloqueia. Crie uma chave em console.cloud.google.com → Credenciais e ative a Google Drive API.</span>
+            </div>
+          </div>
+          <div class="api-key-field">
+            <input id="driveApiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="AIza...">
+            <button class="btn btn-primary" id="driveApiKeySave" type="button">Salvar</button>
+          </div>
         </div>
 
         <div class="settings-card">

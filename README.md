@@ -22,6 +22,8 @@ original, o app cai automaticamente no preview do Drive.
 - **Player nativo (Windows/macOS)** com faixas de áudio e legendas embutidas,
   estilo de legenda, ±10 s, velocidade, preencher a tela e retomada.
 - **Android** com player nativo (ExoPlayer), faixas de áudio, legendas e cache.
+- **Chave da API do Drive** (opcional) para liberar o arquivo original quando a cota
+  anônima do Google bloqueia o download.
 - Navegação por pastas e subpastas, com busca e miniaturas.
 - Episódio anterior/próximo e progresso por episódio.
 - Pular abertura em **120 s** e encerramento em **190 s** por padrão, com opções de
@@ -97,6 +99,24 @@ para o navegador. Arquivos privados que já abrem no Chrome normalmente também 
 preview do Drive dentro do app.
 
 ## Como rodar
+
+### Chave da API do Drive (opcional)
+
+Quando o Google limita o download anônimo de um arquivo, o app usa o preview (uma
+faixa de áudio, sem legendas). Para voltar a tocar o arquivo original, crie uma
+chave da API no Google Cloud:
+
+1. Abra https://console.cloud.google.com/apis/credentials.
+2. Crie um projeto e ative a **Google Drive API** (APIs e serviços → Biblioteca).
+3. Em **Credenciais**, crie uma **Chave de API**.
+4. No app Android: **Ajustes → Chave da API do Drive** e salve.
+   No desktop: **Ctrl+, → Google Drive → Chave da API do Drive**.
+5. Abra o vídeo novamente. O player nativo volta a mostrar as faixas de áudio e as
+   legendas embutidas.
+
+A chave usa a cota do seu projeto, separada da cota anônima do site, e é gratuita
+para uso pessoal. A pasta precisa estar compartilhada como “qualquer pessoa com o
+link”.
 
 ### macOS
 

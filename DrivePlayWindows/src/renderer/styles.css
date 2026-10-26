@@ -2046,3 +2046,28 @@ body.video-fullscreen #main {
 body.video-fullscreen #content {
   background: #000;
 }
+
+.api-key-row {
+  margin-top: 8px;
+}
+
+.api-key-row input {
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: var(--field);
+  color: var(--text);
+  font-size: 11px;
+  outline: none;
+}
+
+.api-key-row input:focus {
+  border-color: var(--accent-border);
+}
+
+.api-key-save {
+  width: 100%;
+  margin-top: 6px;
+}
