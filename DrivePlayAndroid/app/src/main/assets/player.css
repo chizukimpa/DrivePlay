@@ -802,11 +802,11 @@ html.dp-native #dp-root .dp-stage {
 
 #dp-root.dp-cover .dp-menu {
   right: 12px;
-  top: calc(env(safe-area-inset-top, 0px) + 86px);
+  top: calc(env(safe-area-inset-top, 0px) + 110px);
   bottom: auto;
   min-width: 212px;
   max-width: calc(100% - 24px);
-  max-height: calc(100% - 86px - 170px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  max-height: calc(100% - 110px - 146px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
