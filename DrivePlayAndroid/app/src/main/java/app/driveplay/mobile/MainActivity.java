@@ -1043,6 +1043,10 @@ public class MainActivity extends Activity {
      */
     private boolean checkNativeSize(WebView view) {
         if (view == null) return true;
+        // On the cover the task intentionally uses a compact/size-compat
+        // window; do not relaunch it there. The follow-panel logic handles
+        // moving back to the inner display.
+        if (isCoverScreen()) return true;
         int width = view.getWidth();
         int height = view.getHeight();
         if (width <= 0 || height <= 0) return true;
