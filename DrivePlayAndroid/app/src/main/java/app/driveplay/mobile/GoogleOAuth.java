@@ -36,7 +36,11 @@ final class GoogleOAuth {
 
     private static final String PREFS = "driveplay";
     private static final String AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
-    private static final String TOKEN_URL = "https://oauth2.googleapis.com/token";
+    private static final String[] TOKEN_URLS = {
+        "https://oauth2.googleapis.com/token",
+        "https://www.googleapis.com/oauth2/v4/token",
+        "https://accounts.google.com/o/oauth2/token",
+    };
     private static final String SCOPE = "https://www.googleapis.com/auth/drive.readonly";
 
     interface Callback {
@@ -245,7 +249,10 @@ final class GoogleOAuth {
                         @Override public void run() { callback.onSuccess(token); }
                     });
                 } catch (Exception error) {
-                    final String message = "Falha no login: " + error.getMessage();
+                    final String message = isDnsError(error)
+                        ? "Não foi possível falar com o Google (DNS). Verifique a internet "
+                            + "ou o DNS privado do celular e toque em Conectar de novo."
+                        : "Falha no login: " + error.getMessage();
                     main.post(new Runnable() {
                         @Override public void run() { callback.onError(message); }
                     });
@@ -259,7 +266,21 @@ final class GoogleOAuth {
     }
 
     private static JSONObject postToken(String body) throws Exception {
-        HttpURLConnection connection = (HttpURLConnection) new URL(TOKEN_URL).openConnection();
+        Exception last = null;
+        for (String endpoint : TOKEN_URLS) {
+            try {
+                return postToken(endpoint, body);
+            } catch (Exception error) {
+                if (!isDnsError(error)) throw error;
+                last = error;
+                android.util.Log.d("DrivePlay", "oauth token dns failed for " + endpoint);
+            }
+        }
+        throw last == null ? new Exception("Não foi possível falar com o Google.") : last;
+    }
+
+    private static JSONObject postToken(String endpoint, String body) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(endpoint).openConnection();
         connection.setRequestMethod("POST");
         connection.setConnectTimeout(20000);
         connection.setReadTimeout(30000);
@@ -281,6 +302,24 @@ final class GoogleOAuth {
                 json.optString("error", "HTTP " + status)));
         }
         return json;
+    }
+
+    private static boolean isDnsError(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof java.net.UnknownHostException) return true;
+            String message = current.getMessage();
+            if (message != null) {
+                String lower = message.toLowerCase(java.util.Locale.ROOT);
+                if (lower.contains("unable to resolve host")
+                    || lower.contains("no address associated with hostname")
+                    || lower.contains("nodename nor servname")) {
+                    return true;
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private static void respond(Socket socket, boolean ok) {
