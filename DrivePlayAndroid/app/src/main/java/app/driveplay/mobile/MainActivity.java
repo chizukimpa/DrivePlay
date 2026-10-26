@@ -101,11 +101,20 @@ public class MainActivity extends Activity {
     private static int lastRecreateCount;
     private static long lastRecreateAt;
     private static String lastRelaunchKey = "";
+    private static String lastFollowKey = "";
+    private static long lastFollowAt;
     /** Set between onRetainNonConfigurationInstance and onDestroy. */
     private boolean handoffPending;
     /** Handoff used by the CLEAR_TASK full-window relaunch. */
     private boolean relaunchHandoff;
     private static PlayerHandoff pendingHandoff;
+    private android.hardware.display.DisplayManager displayManager;
+    private android.hardware.display.DisplayManager.DisplayListener displayListener;
+    private final Runnable followRunnable = new Runnable() {
+        @Override public void run() {
+            followDisplayIfNeeded();
+        }
+    };
 
     /**
      * Keeps the native player (and its audio) alive while Samsung recreates the
@@ -162,6 +171,20 @@ public class MainActivity extends Activity {
 
         handler = new Handler(Looper.getMainLooper());
         io = Executors.newSingleThreadExecutor();
+        displayManager = (android.hardware.display.DisplayManager)
+            getSystemService(android.content.Context.DISPLAY_SERVICE);
+        if (displayManager != null) {
+            displayListener = new android.hardware.display.DisplayManager.DisplayListener() {
+                @Override public void onDisplayAdded(int displayId) {}
+                @Override public void onDisplayRemoved(int displayId) {}
+                @Override public void onDisplayChanged(int displayId) {
+                    if (handler == null || destroyed) return;
+                    handler.removeCallbacks(followRunnable);
+                    handler.postDelayed(followRunnable, 700);
+                }
+            };
+            displayManager.registerDisplayListener(displayListener, handler);
+        }
         PlaybackService.attach(this);
         if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             WebView.setWebContentsDebuggingEnabled(true);
@@ -259,6 +282,7 @@ public class MainActivity extends Activity {
                 ensureFullWindow();
             }
         }, 800);
+        handler.postDelayed(followRunnable, 900);
     }
 
     @Override
@@ -369,6 +393,20 @@ public class MainActivity extends Activity {
     }
 
     private boolean isCoverScreen() {
+        // The activity configuration is the most reliable source while Samsung
+        // moves the task between the two panels. The cover is roughly square
+        // (426x411 dp); the inner panel is 360x880 dp.
+        try {
+            Configuration configuration = getResources().getConfiguration();
+            int width = configuration.screenWidthDp;
+            int height = configuration.screenHeightDp;
+            if (width > 0 && height > 0 && width <= 900 && height <= 900) {
+                if (Math.abs(width - height) <= 200) return true;
+                if (height > 700 || Math.abs(width - height) > 300) return false;
+            }
+        } catch (Exception ignored) {
+            // Fall through to the physical panel.
+        }
         // Use the physical panel, not the window: Samsung can keep a
         // cover-sized window for a moment after unfolding, and the home would
         // then use the cover layout on the inner display. The cover panel is
@@ -516,6 +554,80 @@ public class MainActivity extends Activity {
                 + height + " display=" + displayId);
         } catch (Exception error) {
             android.util.Log.d("DrivePlay", "relaunch failed " + error);
+        }
+    }
+
+    private int windowDisplayId() {
+        try {
+            android.view.Display display = getWindow().getDecorView().getDisplay();
+            if (display != null) return display.getDisplayId();
+        } catch (Exception ignored) {
+            // Fall back to the activity display.
+        }
+        return currentDisplayId();
+    }
+
+    private int findDisplayIdForPanel(boolean cover) {
+        try {
+            android.hardware.display.DisplayManager manager =
+                (android.hardware.display.DisplayManager)
+                    getSystemService(android.content.Context.DISPLAY_SERVICE);
+            if (manager == null) return -1;
+            // On the Galaxy Flip the cover is display 1 and the inner panel
+            // is display 0. Prefer those stable IDs, then scan as a fallback.
+            int preferred = cover ? 1 : 0;
+            android.view.Display preferredDisplay = manager.getDisplay(preferred);
+            if (preferredDisplay != null) {
+                android.view.Display.Mode mode = preferredDisplay.getMode();
+                int width = mode.getPhysicalWidth();
+                int height = mode.getPhysicalHeight();
+                boolean coverPanel = width > 0 && height > 0 &&
+                    width <= 900 && height <= 900;
+                if (coverPanel == cover) return preferred;
+            }
+            for (android.view.Display display : manager.getDisplays()) {
+                android.view.Display.Mode mode = display.getMode();
+                int width = mode.getPhysicalWidth();
+                int height = mode.getPhysicalHeight();
+                boolean coverPanel = width > 0 && height > 0 &&
+                    width <= 900 && height <= 900;
+                if (coverPanel == cover) return display.getDisplayId();
+            }
+        } catch (Exception ignored) {
+            // Fall through.
+        }
+        return -1;
+    }
+
+    private void followDisplayIfNeeded() {
+        if (destroyed || isFinishing() || isChangingConfigurations()) return;
+        boolean cover = isCoverScreen();
+        int target = findDisplayIdForPanel(cover);
+        int current = windowDisplayId();
+        android.util.Log.d("DrivePlay", "follow check cover=" + cover
+            + " target=" + target + " current=" + current);
+        if (target < 0 || current < 0 || target == current) return;
+        try {
+            android.hardware.display.DisplayManager manager =
+                (android.hardware.display.DisplayManager)
+                    getSystemService(android.content.Context.DISPLAY_SERVICE);
+            android.view.Display display = manager == null ? null : manager.getDisplay(target);
+            if (display == null || display.getState() != android.view.Display.STATE_ON) {
+                return;
+            }
+            android.view.Display.Mode mode = display.getMode();
+            int panelWidth = mode.getPhysicalWidth();
+            int panelHeight = mode.getPhysicalHeight();
+            String key = target + ":" + cover + ":" + current;
+            long now = SystemClock.elapsedRealtime();
+            if (key.equals(lastFollowKey) && now - lastFollowAt < 5000) return;
+            lastFollowKey = key;
+            lastFollowAt = now;
+            android.util.Log.d("DrivePlay", "follow panel cover=" + cover
+                + " target=" + target + " current=" + current);
+            relaunchFullWindow(target, panelWidth, panelHeight);
+        } catch (Exception ignored) {
+            // Keep the current task if the display cannot be queried.
         }
     }
 
@@ -2358,6 +2470,8 @@ public class MainActivity extends Activity {
                 ensureFullWindow();
             }
         }, 700);
+        handler.removeCallbacks(followRunnable);
+        handler.postDelayed(followRunnable, 500);
     }
 
     @Override
@@ -2416,6 +2530,8 @@ public class MainActivity extends Activity {
                 ensureFullWindow();
             }
         }, 700);
+        handler.removeCallbacks(followRunnable);
+        handler.postDelayed(followRunnable, 600);
     }
 
     @Override
@@ -2424,6 +2540,9 @@ public class MainActivity extends Activity {
             + " changing=" + isChangingConfigurations()
             + " overlay=" + (playerOverlay != null));
         destroyed = true;
+        if (displayManager != null && displayListener != null) {
+            try { displayManager.unregisterDisplayListener(displayListener); } catch (Exception ignored) {}
+        }
         if (handler != null) {
             if (autoFullscreenLoop != null) handler.removeCallbacks(autoFullscreenLoop);
             handler.removeCallbacksAndMessages(null);
