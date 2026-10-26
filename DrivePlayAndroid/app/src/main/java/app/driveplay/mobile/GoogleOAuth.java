@@ -48,6 +48,14 @@ final class GoogleOAuth {
         void onError(String message);
     }
 
+    private static final Object PENDING_LOCK = new Object();
+    private static String pendingCode;
+    private static String pendingVerifier;
+    private static String pendingRedirect;
+    private static String pendingClientId;
+    private static String pendingClientSecret;
+    private static Callback pendingCallback;
+
     private GoogleOAuth() {}
 
     private static SharedPreferences prefs(Context context) {
@@ -219,35 +227,17 @@ final class GoogleOAuth {
                         return;
                     }
 
-                    String body = "code=" + enc(code)
-                        + "&client_id=" + enc(clientId)
-                        + "&client_secret=" + enc(clientSecret)
-                        + "&redirect_uri=" + enc(redirect)
-                        + "&grant_type=authorization_code"
-                        + "&code_verifier=" + enc(verifier);
-                    JSONObject json = postToken(body);
-                    String access = json.optString("access_token", "");
-                    final String refresh = json.optString("refresh_token", "");
-                    long expiresIn = json.optLong("expires_in", 3600);
-                    if (TextUtils.isEmpty(access)) {
-                        final String message = json.optString("error_description",
-                            "Não foi possível concluir o login.");
-                        main.post(new Runnable() {
-                            @Override public void run() { callback.onError(message); }
-                        });
-                        return;
+                    // Store the code and exchange it when the app comes back to
+                    // the foreground. While Chrome is in front, the app is in
+                    // the background and some phones block its network/DNS.
+                    synchronized (PENDING_LOCK) {
+                        pendingCode = code;
+                        pendingVerifier = verifier;
+                        pendingRedirect = redirect;
+                        pendingClientId = clientId;
+                        pendingClientSecret = clientSecret;
+                        pendingCallback = callback;
                     }
-                    prefs(context).edit()
-                        .putString("oauthAccessToken", access)
-                        .putString("oauthRefreshToken", refresh)
-                        .putLong("oauthExpiresAt", System.currentTimeMillis() + expiresIn * 1000L)
-                        .putString("oauthClientId", clientId)
-                        .putString("oauthClientSecret", clientSecret)
-                        .apply();
-                    final String token = access;
-                    main.post(new Runnable() {
-                        @Override public void run() { callback.onSuccess(token); }
-                    });
                 } catch (Exception error) {
                     final String message = isDnsError(error)
                         ? "Não foi possível falar com o Google (DNS). Verifique a internet "
@@ -262,6 +252,81 @@ final class GoogleOAuth {
                 }
             }
         }, "driveplay-oauth");
+        thread.start();
+    }
+
+    /** Exchanges the pending code once the app is back in the foreground. */
+    static void resumePending(Context context) {
+        final String code;
+        final String verifier;
+        final String redirect;
+        final String clientId;
+        final String secret;
+        final Callback callback;
+        synchronized (PENDING_LOCK) {
+            if (TextUtils.isEmpty(pendingCode)) return;
+            code = pendingCode;
+            verifier = pendingVerifier;
+            redirect = pendingRedirect;
+            clientId = pendingClientId;
+            secret = pendingClientSecret;
+            callback = pendingCallback;
+            pendingCode = null;
+            pendingVerifier = null;
+            pendingRedirect = null;
+            pendingClientId = null;
+            pendingClientSecret = null;
+            pendingCallback = null;
+        }
+        final Handler main = new Handler(Looper.getMainLooper());
+        Thread thread = new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    String body = "code=" + enc(code)
+                        + "&client_id=" + enc(clientId)
+                        + "&client_secret=" + enc(secret)
+                        + "&redirect_uri=" + enc(redirect)
+                        + "&grant_type=authorization_code"
+                        + "&code_verifier=" + enc(verifier);
+                    JSONObject json = postToken(body);
+                    final String access = json.optString("access_token", "");
+                    final String refresh = json.optString("refresh_token", "");
+                    long expiresIn = json.optLong("expires_in", 3600);
+                    if (TextUtils.isEmpty(access)) {
+                        final String message = json.optString("error_description",
+                            "Não foi possível concluir o login.");
+                        main.post(new Runnable() {
+                            @Override public void run() {
+                                if (callback != null) callback.onError(message);
+                            }
+                        });
+                        return;
+                    }
+                    prefs(context).edit()
+                        .putString("oauthAccessToken", access)
+                        .putString("oauthRefreshToken", refresh)
+                        .putLong("oauthExpiresAt", System.currentTimeMillis() + expiresIn * 1000L)
+                        .putString("oauthClientId", clientId)
+                        .putString("oauthClientSecret", secret)
+                        .apply();
+                    main.post(new Runnable() {
+                        @Override public void run() {
+                            if (callback != null) callback.onSuccess(access);
+                        }
+                    });
+                } catch (Exception error) {
+                    final String message = isDnsError(error)
+                        ? "Não foi possível falar com o Google (DNS). Verifique a internet "
+                            + "ou o DNS privado do celular e toque em Conectar de novo."
+                        : "Falha no login: " + error.getMessage();
+                    main.post(new Runnable() {
+                        @Override public void run() {
+                            if (callback != null) callback.onError(message);
+                        }
+                    });
+                }
+            }
+        }, "driveplay-oauth-token");
         thread.start();
     }
 
@@ -326,7 +391,13 @@ final class GoogleOAuth {
         try {
             String html = ok
                 ? "<html><body style='background:#0b0c10;color:#fff;font:16px sans-serif;text-align:center;padding:60px'>"
-                    + "<h2>Login concluído</h2><p>Volte para o DrivePlay.</p></body></html>"
+                    + "<h2>Login concluído</h2><p>Volte para o DrivePlay para terminar.</p>"
+                    + "<p style='margin-top:28px'><a href='driveplay://oauth-done' "
+                    + "style='display:inline-block;padding:14px 26px;border-radius:999px;"
+                    + "background:#5c8cff;color:#fff;text-decoration:none;font-weight:bold'>"
+                    + "Voltar ao DrivePlay</a></p>"
+                    + "<script>setTimeout(function(){location.href='driveplay://oauth-done';},1500);</script>"
+                    + "</body></html>"
                 : "<html><body style='background:#0b0c10;color:#fff;font:16px sans-serif;text-align:center;padding:60px'>"
                     + "<h2>Login não concluído</h2><p>Volte para o DrivePlay e tente novamente.</p></body></html>";
             byte[] bytes = html.getBytes(StandardCharsets.UTF_8);

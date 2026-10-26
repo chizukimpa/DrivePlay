@@ -1812,6 +1812,10 @@ public class MainActivity extends Activity {
 
         if (Intent.ACTION_VIEW.equals(action) && intent.getData() != null) {
             Uri data = intent.getData();
+            if ("driveplay".equals(data.getScheme()) && "oauth-done".equals(data.getHost())) {
+                GoogleOAuth.resumePending(this);
+                return;
+            }
             String type = intent.getType();
             if (data.getScheme() != null &&
                 ("content".equals(data.getScheme()) || "file".equals(data.getScheme())) &&
@@ -1920,6 +1924,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onResume() {
         super.onResume();
+        GoogleOAuth.resumePending(this);
         if (playerView != null) playerView.onResume();
         if (localPlayerView != null) localPlayerView.onResume();
         int displayId = currentDisplayId();
@@ -2154,6 +2159,7 @@ public class MainActivity extends Activity {
                         new GoogleOAuth.Callback() {
                             @Override public void onSuccess(final String token) {
                                 DriveMedia.setAccessToken(token);
+                                if (destroyed) return;
                                 if (appView != null) {
                                     appView.evaluateJavascript(
                                         "window.__dpSyncGoogleAccount && window.__dpSyncGoogleAccount();",
@@ -2167,6 +2173,7 @@ public class MainActivity extends Activity {
                             }
 
                             @Override public void onError(final String message) {
+                                if (destroyed) return;
                                 try {
                                     new AlertDialog.Builder(MainActivity.this)
                                         .setTitle("Não foi possível conectar")
