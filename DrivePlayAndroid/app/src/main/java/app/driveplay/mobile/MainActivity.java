@@ -100,6 +100,7 @@ public class MainActivity extends Activity {
     private static String lastRecreateKey = "";
     private static int lastRecreateCount;
     private static long lastRecreateAt;
+    private static String lastRelaunchKey = "";
     /** Set between onRetainNonConfigurationInstance and onDestroy. */
     private boolean handoffPending;
 
@@ -240,7 +241,8 @@ public class MainActivity extends Activity {
         lastDisplayId = currentDisplayId();
         if (handoff != null) {
             restoreRetainedPlayer(handoff);
-        } else {
+        } else if (getIntent() == null ||
+                   !getIntent().getBooleanExtra("skipSessionRestore", false)) {
             handler.postDelayed(new Runnable() {
                 @Override public void run() {
                     restorePlayerSession();
@@ -434,6 +436,18 @@ public class MainActivity extends Activity {
             boolean tooSmall = current.width() < panelWidth * 0.9
                 && current.height() < panelHeight * 0.9;
             if (!tooSmall) return;
+            String sizeKey = display.getDisplayId() + ":size "
+                + current.width() + "x" + current.height();
+            if (sizeKey.equals(lastRecreateKey) && lastRecreateCount >= 1 &&
+                playerOverlay == null) {
+                // Recreating did not make the task fill the panel. Start a new
+                // task with explicit full-display bounds instead.
+                if (!sizeKey.equals(lastRelaunchKey)) {
+                    lastRelaunchKey = sizeKey;
+                    relaunchFullWindow(display.getDisplayId(), panelWidth, panelHeight);
+                }
+                return;
+            }
             requestWindowRecreate("size " + current.width() + "x" + current.height(),
                 display.getDisplayId());
         } catch (Exception ignored) {
@@ -469,6 +483,23 @@ public class MainActivity extends Activity {
         }, 300);
     }
 
+    private void relaunchFullWindow(int displayId, int width, int height) {
+        if (destroyed || isFinishing() || playerOverlay != null) return;
+        try {
+            Intent intent = new Intent(this, MainActivity.class);
+            intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+            intent.putExtra("skipSessionRestore", true);
+            android.app.ActivityOptions options = android.app.ActivityOptions.makeBasic();
+            options.setLaunchDisplayId(displayId);
+            options.setLaunchBounds(new android.graphics.Rect(0, 0, width, height));
+            startActivity(intent, options.toBundle());
+            android.util.Log.d("DrivePlay", "relaunch full window " + width + "x"
+                + height + " display=" + displayId);
+        } catch (Exception error) {
+            android.util.Log.d("DrivePlay", "relaunch failed " + error);
+        }
+    }
+
     private void applyCoverMode() {
         boolean wasCover = coverMode;
         coverMode = isCoverScreen();
@@ -477,6 +508,7 @@ public class MainActivity extends Activity {
             // recreated for the cover in the previous direction.
             lastRecreateKey = "";
             lastRecreateCount = 0;
+            lastRelaunchKey = "";
         }
         String command = "window.__dpSetCover && window.__dpSetCover(" + coverMode + ");"
             + "window.dispatchEvent(new Event('resize'));";
@@ -887,8 +919,12 @@ public class MainActivity extends Activity {
             android.graphics.Rect window =
                 getWindowManager().getCurrentWindowMetrics().getBounds();
             if (window.width() <= 0 || window.height() <= 0) return true;
-            if (Math.abs(width - window.width()) <= 40
-                && Math.abs(height - window.height()) <= 40) {
+            // System bars/insets can make the WebView a little shorter than
+            // the window; only a real cover-sized layout is a mismatch.
+            int toleranceW = Math.max(60, window.width() / 10);
+            int toleranceH = Math.max(120, window.height() / 10);
+            if (Math.abs(width - window.width()) <= toleranceW
+                && Math.abs(height - window.height()) <= toleranceH) {
                 return true;
             }
             requestWindowRecreate("webview size " + width + "x" + height
