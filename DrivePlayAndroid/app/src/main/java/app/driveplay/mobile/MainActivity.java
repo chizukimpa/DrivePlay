@@ -392,71 +392,93 @@ public class MainActivity extends Activity {
         return getResources().getDisplayMetrics().density;
     }
 
-    private boolean isCoverScreen() {
-        // The activity configuration is the most reliable source while Samsung
-        // moves the task between the two panels. The cover is roughly square
-        // (426x411 dp); the inner panel is 360x880 dp.
+    private boolean configCoverPanel() {
         try {
             Configuration configuration = getResources().getConfiguration();
             int width = configuration.screenWidthDp;
             int height = configuration.screenHeightDp;
-            if (width > 0 && height > 0 && width <= 900 && height <= 900) {
-                if (Math.abs(width - height) <= 200) return true;
-                if (height > 700 || Math.abs(width - height) > 300) return false;
-            }
+            return width > 0 && height > 0 && width <= 900 && height <= 700 &&
+                Math.abs(width - height) <= 200;
         } catch (Exception ignored) {
-            // Fall through to the physical panel.
+            return false;
         }
-        // Use the physical panel, not the window: Samsung can keep a
-        // cover-sized window for a moment after unfolding, and the home would
-        // then use the cover layout on the inner display. The cover panel is
-        // 748x720; the inner panel is 1080x2640.
+    }
+
+    private boolean configInnerPanel() {
+        try {
+            Configuration configuration = getResources().getConfiguration();
+            int width = configuration.screenWidthDp;
+            int height = configuration.screenHeightDp;
+            return width > 0 && height > 0 &&
+                (height > 700 || Math.abs(width - height) > 300);
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
+    private Boolean physicalCoverPanelOrNull() {
         try {
             android.view.Display display = getDisplay();
             if (display != null) {
                 android.view.Display.Mode mode = display.getMode();
-                int panelWidth = mode.getPhysicalWidth();
-                int panelHeight = mode.getPhysicalHeight();
-                if (panelWidth > 0 && panelHeight > 0) {
-                    return panelWidth <= 900 && panelHeight <= 900;
+                int width = mode.getPhysicalWidth();
+                int height = mode.getPhysicalHeight();
+                if (width > 0 && height > 0) {
+                    return width <= 900 && height <= 900;
                 }
             }
         } catch (Exception ignored) {
-            // Fall back to the window/configuration below.
+            // Fall through.
         }
+        return null;
+    }
 
-        int width = 0;
-        int height = 0;
-        float density = getResources().getDisplayMetrics().density;
-        if (density <= 0) density = 1f;
+    private boolean physicalCoverPanel() {
+        Boolean value = physicalCoverPanelOrNull();
+        return value != null && value;
+    }
 
-        if (Build.VERSION.SDK_INT >= 30) {
-            try {
-                android.graphics.Rect bounds =
-                    getWindowManager().getCurrentWindowMetrics().getBounds();
-                if (bounds.width() > 0 && bounds.height() > 0) {
-                    width = Math.round(bounds.width() / density);
-                    height = Math.round(bounds.height() / density);
+    private boolean isCoverScreen() {
+        // Layout must follow the display the window is actually attached to.
+        // The activity configuration can lag during a fold, and the window
+        // metrics can be a cover-sized sandbox.
+        try {
+            int id = windowDisplayId();
+            if (id >= 0) {
+                android.hardware.display.DisplayManager manager =
+                    (android.hardware.display.DisplayManager)
+                        getSystemService(android.content.Context.DISPLAY_SERVICE);
+                android.view.Display display = manager == null ? null : manager.getDisplay(id);
+                if (display != null) {
+                    android.view.Display.Mode mode = display.getMode();
+                    int width = mode.getPhysicalWidth();
+                    int height = mode.getPhysicalHeight();
+                    if (width > 0 && height > 0) {
+                        return width <= 900 && height <= 900;
+                    }
                 }
-            } catch (Exception ignored) {
-                // Fall back to the configuration below.
             }
+        } catch (Exception ignored) {
+            // Fall back to the physical activity display.
         }
+        if (physicalCoverPanel()) return true;
+        return configCoverPanel();
+    }
 
-        if (width <= 0 || height <= 0) {
-            Configuration configuration = getResources().getConfiguration();
-            width = configuration.screenWidthDp;
-            height = configuration.screenHeightDp;
-        }
-        if (width <= 0 || height <= 0) {
-            android.util.DisplayMetrics metrics = getResources().getDisplayMetrics();
-            width = Math.round(metrics.widthPixels / density);
-            height = Math.round(metrics.heightPixels / density);
-        }
-        if (width <= 0 || height <= 0) return false;
-
-        boolean squareish = Math.abs(width - height) <= 280;
-        return width <= 780 && height <= 780 && squareish;
+    /**
+     * The panel the system currently wants the app on. The activity
+     * configuration follows the fold even when the task is left on the wrong
+     * display, so it is the target for followDisplayIfNeeded().
+     */
+    private boolean desiredCoverPanel() {
+        // The activity display is the panel the system believes the app is on;
+        // it is the most reliable target during a fold, even when the task
+        // window itself was left on the other display.
+        Boolean physical = physicalCoverPanelOrNull();
+        if (physical != null) return physical;
+        if (configCoverPanel()) return true;
+        if (configInnerPanel()) return false;
+        return false;
     }
 
     /**
@@ -600,8 +622,13 @@ public class MainActivity extends Activity {
     }
 
     private void followDisplayIfNeeded() {
-        if (destroyed || isFinishing() || isChangingConfigurations()) return;
-        boolean cover = isCoverScreen();
+        if (destroyed || isFinishing()) return;
+        if (isChangingConfigurations()) {
+            handler.removeCallbacks(followRunnable);
+            handler.postDelayed(followRunnable, 800);
+            return;
+        }
+        boolean cover = desiredCoverPanel();
         int target = findDisplayIdForPanel(cover);
         int current = windowDisplayId();
         android.util.Log.d("DrivePlay", "follow check cover=" + cover
@@ -613,6 +640,8 @@ public class MainActivity extends Activity {
                     getSystemService(android.content.Context.DISPLAY_SERVICE);
             android.view.Display display = manager == null ? null : manager.getDisplay(target);
             if (display == null || display.getState() != android.view.Display.STATE_ON) {
+                handler.removeCallbacks(followRunnable);
+                handler.postDelayed(followRunnable, 800);
                 return;
             }
             android.view.Display.Mode mode = display.getMode();
