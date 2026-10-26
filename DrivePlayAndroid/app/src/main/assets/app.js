@@ -1993,8 +1993,6 @@
       ending.value = String(state.settings.endingSeconds);
       ending.disabled = !state.settings.skipEnding;
     }
-    var apiKeyInput = $("#driveApiKeyInput");
-    if (apiKeyInput) apiKeyInput.value = state.settings.driveApiKey || "";
   }
 
   function bindSettings() {
@@ -2035,25 +2033,7 @@
       });
     }
 
-    var apiKeyInput = $("#driveApiKeyInput");
-    var apiKeySave = $("#driveApiKeySave");
-    if (apiKeySave) {
-      apiKeySave.addEventListener("click", function () {
-        state.settings.driveApiKey = apiKeyInput ? apiKeyInput.value.trim() : "";
-        saveSettings();
-        syncSettings();
-        toast(state.settings.driveApiKey
-          ? "Chave salva. Abra o vídeo para tentar o arquivo original."
-          : "Chave removida. O app usa o preview do Drive.");
-      });
-    }
-    if (apiKeyInput) {
-      apiKeyInput.addEventListener("keydown", function (event) {
-        if (event.key !== "Enter") return;
-        event.preventDefault();
-        if (apiKeySave) apiKeySave.click();
-      });
-    }
+
   }
 
   /* ------------------------------------------------------------------ ui */
@@ -2063,6 +2043,10 @@
     $("#pasteBtn").addEventListener("click", pasteLink);
     $("#localBtn").addEventListener("click", pickLocalVideo);
     $("#settingsBtn").addEventListener("click", function () { navigateRoot("settings"); });
+    var googleDrivePicker = $("#googleDrivePicker");
+    if (googleDrivePicker) {
+      googleDrivePicker.addEventListener("click", pickLocalVideo);
+    }
     $("#newCollectionBtn").addEventListener("click", createCollectionFlow);
     $("#addCollectionBtn").addEventListener("click", createCollectionFlow);
     $("#createCollectionBtn").addEventListener("click", createCollectionFlow);

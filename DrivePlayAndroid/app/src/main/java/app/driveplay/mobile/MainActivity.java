@@ -1258,11 +1258,11 @@ public class MainActivity extends Activity {
             new AlertDialog.Builder(this)
                 .setTitle("Drive no limite de downloads")
                 .setMessage("O preview do Drive tem só uma faixa de áudio e não tem legendas. "
-                    + "Com uma chave da API do Google Drive, o app baixa o arquivo original, "
-                    + "com todas as faixas e legendas. A chave é gratuita e usa a cota do seu projeto.")
-                .setPositiveButton("Configurar chave", new android.content.DialogInterface.OnClickListener() {
+                    + "Para assistir ao arquivo original com todas as faixas e legendas, "
+                    + "escolha o vídeo pelo app Google Drive do celular.")
+                .setPositiveButton("Escolher no Google Drive", new android.content.DialogInterface.OnClickListener() {
                     @Override public void onClick(android.content.DialogInterface dialog, int which) {
-                        promptDriveApiKey();
+                        pickLocalVideo();
                     }
                 })
                 .setNegativeButton("Usar preview", null)

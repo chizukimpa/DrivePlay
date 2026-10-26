@@ -861,6 +861,10 @@ final class NativeVideoPlayer {
     private String describe(PlaybackException error) {
         if (error == null) return "Não foi possível reproduzir este vídeo.";
         String name = error.getErrorCodeName();
+        if (error.errorCode == PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS) {
+            return "O Drive recusou o download (cota). Toque em “Vídeo local” e escolha "
+                + "o arquivo no Google Drive do celular para ter todas as faixas e legendas.";
+        }
         if (error.errorCode == PlaybackException.ERROR_CODE_DECODER_INIT_FAILED
             || error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED) {
             return "O celular não conseguiu decodificar o vídeo deste arquivo ("

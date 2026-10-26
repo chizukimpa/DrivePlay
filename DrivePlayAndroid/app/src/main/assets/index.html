@@ -42,9 +42,9 @@
             </button>
           </div>
           <div class="link-actions">
-            <button class="btn btn-ghost" id="localBtn" type="button">
+            <button class="btn btn-ghost" id="localBtn" type="button" title="Escolha um vídeo do celular ou do Google Drive (conta do aparelho)">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-10Z"/></svg>
-              <span>Vídeo local</span>
+              <span>Celular / Drive</span>
             </button>
             <button class="btn btn-primary" id="openBtn" type="button">
               Abrir link
@@ -239,16 +239,13 @@
         </div>
 
         <div class="settings-card">
-          <div class="setting-row">
-            <div class="setting-label">
-              <strong>Chave da API do Drive</strong>
-              <span>Opcional: libera o arquivo original (todas as faixas e legendas) quando a cota anônima do Drive bloqueia. Crie uma chave em console.cloud.google.com → Credenciais e ative a Google Drive API.</span>
-            </div>
-          </div>
-          <div class="api-key-field">
-            <input id="driveApiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="AIza...">
-            <button class="btn btn-primary" id="driveApiKeySave" type="button">Salvar</button>
-          </div>
+          <button class="settings-action" id="googleDrivePicker" type="button">
+            <span>
+              <strong>Abrir vídeo do Google Drive</strong>
+              <em>Escolha o episódio no app Drive do celular para tocar o original com todas as faixas e legendas.</em>
+            </span>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-10Z"/></svg>
+          </button>
         </div>
 
         <div class="settings-card">

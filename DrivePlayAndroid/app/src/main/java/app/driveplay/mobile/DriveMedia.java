@@ -103,12 +103,7 @@ final class DriveMedia {
     }
 
     private static Result resolveUncached(String fileId, String cookie) {
-        Result result = resolveViaApi(fileId);
-        if (result != null && result.error == null && !TextUtils.isEmpty(result.url)) {
-            android.util.Log.d("DrivePlay", "resolve via Drive API ok");
-            return result;
-        }
-        result = new Result();
+        Result result = new Result();
         try {
             String url = "https://drive.google.com/uc?export=download&id=" + fileId;
             android.util.Log.d("DrivePlay", "resolve start " + fileId);
