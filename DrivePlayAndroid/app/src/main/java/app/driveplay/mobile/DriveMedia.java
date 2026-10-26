@@ -29,6 +29,7 @@ final class DriveMedia {
     private static final Pattern CONFIRM = Pattern.compile("name=\"confirm\"\\s+value=\"([^\"]+)\"");
     private static final Pattern UUID = Pattern.compile("name=\"uuid\"\\s+value=\"([^\"]+)\"");
     private static String apiKey = "";
+    private static String accessToken = "";
     private static final java.util.LinkedHashMap<String, CachedResult> CACHE =
         new java.util.LinkedHashMap<String, CachedResult>(16, 0.75f, true) {
             @Override
@@ -41,6 +42,14 @@ final class DriveMedia {
 
     static void setApiKey(String key) {
         apiKey = key == null ? "" : key.trim();
+    }
+
+    static void setAccessToken(String token) {
+        accessToken = token == null ? "" : token.trim();
+    }
+
+    static String accessToken() {
+        return accessToken;
     }
 
     static String apiKey() {
@@ -103,7 +112,12 @@ final class DriveMedia {
     }
 
     private static Result resolveUncached(String fileId, String cookie) {
-        Result result = new Result();
+        Result result = resolveViaApi(fileId);
+        if (result != null && result.error == null && !TextUtils.isEmpty(result.url)) {
+            android.util.Log.d("DrivePlay", "resolve via OAuth Drive API ok");
+            return result;
+        }
+        result = new Result();
         try {
             String url = "https://drive.google.com/uc?export=download&id=" + fileId;
             android.util.Log.d("DrivePlay", "resolve start " + fileId);
@@ -197,23 +211,23 @@ final class DriveMedia {
      * shared with "anyone with the link", which is the case of the app folders.
      */
     private static Result resolveViaApi(String fileId) {
-        if (TextUtils.isEmpty(apiKey)) return null;
+        if (TextUtils.isEmpty(accessToken)) return null;
         Result result = new Result();
         HttpURLConnection connection = null;
         try {
             String url = "https://www.googleapis.com/drive/v3/files/" + fileId
-                + "?alt=media&supportsAllDrives=true&key="
-                + java.net.URLEncoder.encode(apiKey, "UTF-8");
+                + "?alt=media&supportsAllDrives=true";
             connection = (HttpURLConnection) new URL(url).openConnection();
             connection.setInstanceFollowRedirects(true);
-            connection.setConnectTimeout(10000);
+            connection.setConnectTimeout(12000);
             connection.setReadTimeout(20000);
             connection.setRequestProperty("User-Agent", UA);
             connection.setRequestProperty("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8");
+            connection.setRequestProperty("Authorization", "Bearer " + accessToken);
             connection.setRequestProperty("Range", "bytes=0-2047");
             int status = connection.getResponseCode();
             String type = connection.getContentType();
-            android.util.Log.d("DrivePlay", "Drive API status=" + status + " type=" + type);
+            android.util.Log.d("DrivePlay", "OAuth API status=" + status + " type=" + type);
             if (status >= 200 && status < 400
                 && (type == null || !type.contains("text/html"))) {
                 byte[] head = readBytes(connection, 2048);
@@ -233,15 +247,13 @@ final class DriveMedia {
                         try { result.length = Long.parseLong(length); }
                         catch (NumberFormatException ignored) {}
                     }
-                    android.util.Log.d("DrivePlay", "Drive API ok len=" + result.length
-                        + " range=" + result.rangeSupported);
                     return result;
                 }
             }
             result.error = "API HTTP " + status;
         } catch (Exception error) {
             result.error = error.getClass().getSimpleName() + ": " + error.getMessage();
-            android.util.Log.d("DrivePlay", "Drive API exception " + result.error);
+            android.util.Log.d("DrivePlay", "OAuth API exception " + result.error);
         } finally {
             if (connection != null) {
                 try { connection.disconnect(); } catch (Exception ignored) {}

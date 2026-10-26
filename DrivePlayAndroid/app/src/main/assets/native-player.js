@@ -61,6 +61,9 @@
   } catch (error) {
     settings = {};
   }
+  // A local/picked file has a one-item playlist: auto-next would reopen the
+  // same video from the start forever.
+  if (isLocal) settings.autoNext = false;
 
   var cover = false;
   try {

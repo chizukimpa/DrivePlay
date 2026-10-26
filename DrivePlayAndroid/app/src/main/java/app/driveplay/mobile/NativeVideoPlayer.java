@@ -338,6 +338,9 @@ final class NativeVideoPlayer {
         } else {
             String cookie = DriveMedia.cookieFor(url);
             if (!TextUtils.isEmpty(cookie)) headers.put("Cookie", cookie);
+            if (url.contains("www.googleapis.com/") && !TextUtils.isEmpty(DriveMedia.accessToken())) {
+                headers.put("Authorization", "Bearer " + DriveMedia.accessToken());
+            }
         }
         http.setDefaultRequestProperties(headers);
         return http;

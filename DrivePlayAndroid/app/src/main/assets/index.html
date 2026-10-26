@@ -239,13 +239,23 @@
         </div>
 
         <div class="settings-card">
-          <button class="settings-action" id="googleDrivePicker" type="button">
-            <span>
-              <strong>Abrir vídeo do Google Drive</strong>
-              <em>Escolha o episódio no app Drive do celular para tocar o original com todas as faixas e legendas.</em>
-            </span>
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5A2.5 2.5 0 0 1 6.5 4H10l2 2h5.5A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5v-10Z"/></svg>
-          </button>
+          <div class="setting-row">
+            <div class="setting-label">
+              <strong>Conta Google (Drive)</strong>
+              <span>Conecte a conta do PC para baixar o arquivo original com todas as faixas e legendas. Crie um cliente OAuth “Desktop app” em console.cloud.google.com → Credenciais, ative a Google Drive API e cole abaixo o Client ID e o Client secret.</span>
+            </div>
+          </div>
+          <div class="oauth-field">
+            <input id="oauthClientId" type="text" autocomplete="off" spellcheck="false" placeholder="Client ID (....apps.googleusercontent.com)">
+          </div>
+          <div class="oauth-field">
+            <input id="oauthClientSecret" type="password" autocomplete="off" spellcheck="false" placeholder="Client secret">
+          </div>
+          <div class="oauth-actions">
+            <button class="btn btn-primary" id="oauthConnect" type="button">Conectar conta</button>
+            <button class="btn btn-ghost" id="oauthDisconnect" type="button">Desconectar</button>
+          </div>
+          <div class="oauth-status" id="oauthStatus">Não conectado</div>
         </div>
 
         <div class="settings-card">

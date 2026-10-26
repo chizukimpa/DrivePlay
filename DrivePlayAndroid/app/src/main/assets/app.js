@@ -1250,6 +1250,7 @@
 
   function renderSettings() {
     syncSettings();
+    syncGoogleAccount();
     var version = $("#versionLabel");
     if (version) version.textContent = "DrivePlay " + state.version + " · Android";
   }
@@ -2036,6 +2037,29 @@
 
   }
 
+  function syncGoogleAccount() {
+    var idInput = $("#oauthClientId");
+    var secretInput = $("#oauthClientSecret");
+    var status = $("#oauthStatus");
+    if (!idInput || !secretInput) return;
+    if (!(window.Android && typeof window.Android.getGoogleAccount === "function")) {
+      if (status) status.textContent = "Disponível no app Android.";
+      return;
+    }
+    try {
+      var info = JSON.parse(window.Android.getGoogleAccount() || "{}");
+      if (document.activeElement !== idInput) idInput.value = info.clientId || "";
+      if (document.activeElement !== secretInput) secretInput.value = info.clientSecret || "";
+      if (status) {
+        status.textContent = info.connected ? "Conta conectada." : "Não conectado.";
+        status.classList.toggle("connected", info.connected === true);
+      }
+    } catch (error) { /* noop */ }
+  }
+
+  window.__dpSyncGoogleAccount = syncGoogleAccount;
+  window.__dpNavigate = function (view) { navigateRoot(view); };
+
   /* ------------------------------------------------------------------ ui */
 
   function bindUi() {
@@ -2043,9 +2067,34 @@
     $("#pasteBtn").addEventListener("click", pasteLink);
     $("#localBtn").addEventListener("click", pickLocalVideo);
     $("#settingsBtn").addEventListener("click", function () { navigateRoot("settings"); });
-    var googleDrivePicker = $("#googleDrivePicker");
-    if (googleDrivePicker) {
-      googleDrivePicker.addEventListener("click", pickLocalVideo);
+    var oauthConnect = $("#oauthConnect");
+    if (oauthConnect) {
+      oauthConnect.addEventListener("click", function () {
+        var idInput = $("#oauthClientId");
+        var secretInput = $("#oauthClientSecret");
+        var clientId = idInput ? idInput.value.trim() : "";
+        var secret = secretInput ? secretInput.value.trim() : "";
+        if (!clientId || !secret) {
+          toast("Informe o Client ID e o Client secret.");
+          return;
+        }
+        if (window.Android && typeof window.Android.connectGoogle === "function") {
+          toast("Abrindo o login do Google no navegador…");
+          window.Android.connectGoogle(clientId, secret);
+        } else {
+          toast("Login disponível no app Android.");
+        }
+      });
+    }
+    var oauthDisconnect = $("#oauthDisconnect");
+    if (oauthDisconnect) {
+      oauthDisconnect.addEventListener("click", function () {
+        if (window.Android && typeof window.Android.disconnectGoogle === "function") {
+          window.Android.disconnectGoogle();
+          toast("Conta desconectada.");
+          syncGoogleAccount();
+        }
+      });
     }
     $("#newCollectionBtn").addEventListener("click", createCollectionFlow);
     $("#addCollectionBtn").addEventListener("click", createCollectionFlow);

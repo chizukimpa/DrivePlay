@@ -141,6 +141,7 @@ public class MainActivity extends Activity {
         libraryStore = new LibraryStore(prefs());
         settingsJson = prefs().getString("settings", "{}");
         applyDriveApiKey(settingsJson);
+        DriveMedia.setAccessToken(GoogleOAuth.cachedToken(this));
         fillScreen = readFillScreen(settingsJson);
         coverMode = isCoverScreen();
 
@@ -467,8 +468,21 @@ public class MainActivity extends Activity {
         PlaybackService.rememberTitle(currentTitle);
         PlaybackService.start(this, true);
 
-        String cookie = DriveMedia.loginCookie();
-        nativePlayer.open(fileId, currentTitle, cookie);
+        final String cookie = DriveMedia.loginCookie();
+        final String targetId = fileId;
+        io.execute(new Runnable() {
+            @Override public void run() {
+                final String token = GoogleOAuth.accessToken(MainActivity.this);
+                DriveMedia.setAccessToken(token);
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        if (destroyed || nativePlayer == null) return;
+                        if (!targetId.equals(currentFileId)) return;
+                        nativePlayer.open(targetId, currentTitle, cookie);
+                    }
+                });
+            }
+        });
     }
 
     private void applyDriveApiKey(String json) {
@@ -839,6 +853,10 @@ public class MainActivity extends Activity {
     }
 
     private void playNext() {
+        if (playerIsLocal) {
+            toast("Fim do vídeo.");
+            return;
+        }
         if (playlistIndex >= 0 && playlistIndex + 1 < playlist.size()) {
             MediaItem next = playlist.get(playlistIndex + 1);
             addLibraryToApp(next.id, next.title, fileUrl(next.id));
@@ -854,6 +872,10 @@ public class MainActivity extends Activity {
     }
 
     private void playPrevious() {
+        if (playerIsLocal) {
+            toast("Início do vídeo.");
+            return;
+        }
         if (playlistIndex > 0) {
             MediaItem previous = playlist.get(playlistIndex - 1);
             addLibraryToApp(previous.id, previous.title, fileUrl(previous.id));
@@ -1254,19 +1276,40 @@ public class MainActivity extends Activity {
         if (TextUtils.isEmpty(message) || !message.contains("limite")) return;
         if (TextUtils.isEmpty(currentFileId) || currentFileId.equals(lastQuotaPromptFile)) return;
         lastQuotaPromptFile = currentFileId;
+        final boolean connected = GoogleOAuth.hasAccount(this);
         try {
-            new AlertDialog.Builder(this)
+            AlertDialog.Builder builder = new AlertDialog.Builder(this)
                 .setTitle("Drive no limite de downloads")
-                .setMessage("O preview do Drive tem só uma faixa de áudio e não tem legendas. "
-                    + "Para assistir ao arquivo original com todas as faixas e legendas, "
-                    + "escolha o vídeo pelo app Google Drive do celular.")
-                .setPositiveButton("Escolher no Google Drive", new android.content.DialogInterface.OnClickListener() {
+                .setMessage(connected
+                    ? "O Drive recusou o arquivo original mesmo com a conta conectada. "
+                        + "Você pode tentar de novo ou continuar no preview (uma faixa, sem legendas)."
+                    : "O preview do Drive tem só uma faixa de áudio e não tem legendas. "
+                        + "Conecte sua conta Google em Ajustes → Conta Google (Drive) para "
+                        + "baixar o arquivo original com todas as faixas e legendas.");
+            if (connected) {
+                builder.setPositiveButton("Tentar de novo", new android.content.DialogInterface.OnClickListener() {
                     @Override public void onClick(android.content.DialogInterface dialog, int which) {
-                        pickLocalVideo();
+                        loadPlayerFile(currentFileId, currentTitle);
                     }
-                })
-                .setNegativeButton("Usar preview", null)
-                .show();
+                });
+            } else {
+                builder.setPositiveButton("Conectar conta", new android.content.DialogInterface.OnClickListener() {
+                    @Override public void onClick(android.content.DialogInterface dialog, int which) {
+                        closePlayer();
+                        handler.postDelayed(new Runnable() {
+                            @Override public void run() {
+                                if (appView != null) {
+                                    appView.evaluateJavascript(
+                                        "window.__dpNavigate && window.__dpNavigate('settings');",
+                                        null);
+                                }
+                            }
+                        }, 250);
+                    }
+                });
+            }
+            builder.setNegativeButton("Usar preview", null);
+            builder.show();
         } catch (Exception ignored) {
             // The player keeps working in preview mode.
         }
@@ -1666,6 +1709,7 @@ public class MainActivity extends Activity {
         if (json == null || json.isEmpty()) return;
         settingsJson = json;
         applyDriveApiKey(settingsJson);
+        DriveMedia.setAccessToken(GoogleOAuth.cachedToken(this));
         fillScreen = readFillScreen(settingsJson);
         prefs().edit().putString("settings", settingsJson).apply();
         updateFillButton();
@@ -2086,6 +2130,71 @@ public class MainActivity extends Activity {
         public void openGoogleLogin() {
             runOnUiThread(new Runnable() {
                 @Override public void run() { showGoogleLogin(); }
+            });
+        }
+
+        @JavascriptInterface
+        public String getGoogleAccount() {
+            try {
+                JSONObject json = new JSONObject();
+                json.put("clientId", GoogleOAuth.clientId(MainActivity.this));
+                json.put("clientSecret", GoogleOAuth.clientSecret(MainActivity.this));
+                json.put("connected", GoogleOAuth.hasAccount(MainActivity.this));
+                return json.toString();
+            } catch (Exception error) {
+                return "{}";
+            }
+        }
+
+        @JavascriptInterface
+        public void connectGoogle(final String clientId, final String clientSecret) {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    GoogleOAuth.connect(MainActivity.this, clientId, clientSecret,
+                        new GoogleOAuth.Callback() {
+                            @Override public void onSuccess(final String token) {
+                                DriveMedia.setAccessToken(token);
+                                if (appView != null) {
+                                    appView.evaluateJavascript(
+                                        "window.__dpSyncGoogleAccount && window.__dpSyncGoogleAccount();",
+                                        null);
+                                }
+                                toast("Conta Google conectada. Abrindo o vídeo original…");
+                                if (!TextUtils.isEmpty(currentFileId)
+                                    && !currentFileId.startsWith("local:")) {
+                                    loadPlayerFile(currentFileId, currentTitle);
+                                }
+                            }
+
+                            @Override public void onError(final String message) {
+                                try {
+                                    new AlertDialog.Builder(MainActivity.this)
+                                        .setTitle("Não foi possível conectar")
+                                        .setMessage(message)
+                                        .setPositiveButton("OK", null)
+                                        .show();
+                                } catch (Exception ignored) {
+                                    toast(message);
+                                }
+                            }
+                        });
+                }
+            });
+        }
+
+        @JavascriptInterface
+        public void disconnectGoogle() {
+            runOnUiThread(new Runnable() {
+                @Override public void run() {
+                    GoogleOAuth.disconnect(MainActivity.this);
+                    DriveMedia.setAccessToken("");
+                    if (appView != null) {
+                        appView.evaluateJavascript(
+                            "window.__dpSyncGoogleAccount && window.__dpSyncGoogleAccount();",
+                            null);
+                    }
+                    toast("Conta Google desconectada.");
+                }
             });
         }
 
