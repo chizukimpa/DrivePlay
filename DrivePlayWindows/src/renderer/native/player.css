@@ -161,7 +161,7 @@ html.dp-native #dp-root .dp-stage {
   z-index: 2;
   pointer-events: none;
   opacity: 0;
-  transition: opacity 180ms ease;
+  transition: opacity 240ms cubic-bezier(0.22, 0.9, 0.3, 1);
   background:
     linear-gradient(to bottom, rgba(0, 0, 0, 0.72), transparent 22%),
     linear-gradient(to top, rgba(0, 0, 0, 0.86), transparent 34%);
@@ -185,7 +185,7 @@ html.dp-native #dp-root .dp-stage {
   pointer-events: none;
   opacity: 0;
   transform: translateY(-10px);
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition: opacity 240ms cubic-bezier(0.22, 0.9, 0.3, 1), transform 240ms cubic-bezier(0.22, 0.9, 0.3, 1);
 }
 
 #dp-root.dp-visible .dp-top {
@@ -278,7 +278,7 @@ html.dp-native #dp-root .dp-stage {
   pointer-events: none;
   opacity: 0;
   transform: translateY(12px);
-  transition: opacity 180ms ease, transform 180ms ease;
+  transition: opacity 240ms cubic-bezier(0.22, 0.9, 0.3, 1), transform 240ms cubic-bezier(0.22, 0.9, 0.3, 1);
 }
 
 #dp-root.dp-visible .dp-bottom {
@@ -477,6 +477,18 @@ html.dp-native #dp-root .dp-stage {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  animation: dp-menu-in 190ms cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+@keyframes dp-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 #dp-root .dp-menu button {
@@ -664,6 +676,18 @@ html.dp-native #dp-root .dp-stage {
 
 #dp-root .dp-pill.dp-show {
   display: inline-flex;
+  animation: dp-pill-in 200ms cubic-bezier(0.22, 0.9, 0.3, 1);
+}
+
+@keyframes dp-pill-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
 }
 
 #dp-root .dp-pill svg {
@@ -777,22 +801,26 @@ html.dp-native #dp-root .dp-stage {
 }
 
 #dp-root.dp-cover .dp-menu {
-  right: 14px;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 106px);
+  right: 12px;
+  top: calc(env(safe-area-inset-top, 0px) + 134px);
+  bottom: auto;
   min-width: 212px;
-  max-height: calc(100% - 122px);
+  max-width: calc(100% - 24px);
+  max-height: calc(100% - 134px - 122px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   overflow-y: auto;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 
 #dp-root.dp-cover .dp-menu button {
-  min-height: 46px;
-  padding: 0 14px;
-  font-size: 15px;
+  min-height: 42px;
+  padding: 0 12px;
+  font-size: 14px;
 }
 
 #dp-root.dp-cover .dp-menu .dp-menu-title {
-  font-size: 11.5px;
+  font-size: 11px;
 }
 
 #dp-root.dp-cover .dp-toast {
@@ -909,5 +937,16 @@ html.dp-native #dp-root .dp-stage {
   #dp-root .dp-time {
     min-width: 34px;
     font-size: 10.5px;
+  }
+}
+
+
+@media (prefers-reduced-motion: reduce) {
+  #dp-root *,
+  #dp-root *::before,
+  #dp-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

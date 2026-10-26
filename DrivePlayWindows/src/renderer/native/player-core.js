@@ -274,6 +274,7 @@
     var resumeTarget = null;
     var didSkipIntro = false;
     var didAdvance = false;
+    var lastObservedTime = 0;
     var lastPaused = null;
     var lastPausedIcon = null;
     var toastTimer = null;
@@ -479,10 +480,20 @@
       lastSavedTick = time;
     }
 
+    function logNative(message) {
+      try {
+        if (window.PlayerBridge && typeof PlayerBridge.nativeLog === "function") {
+          PlayerBridge.nativeLog(String(message || ""));
+        }
+      } catch (error) { /* noop */ }
+    }
+
     function finishEpisode() {
       if (didAdvance) return;
       didAdvance = true;
       var total = duration();
+      logNative("finish episode at " + Math.round(currentTime()) + "/" + Math.round(total)
+        + " autoNext=" + settings.autoNext);
       saveProgress(total, total);
       if (settings.autoNext && typeof options.next === "function") {
         try {
@@ -498,6 +509,8 @@
       var total = duration();
       if (!(total > settings.introSeconds + 20)) return;
       didSkipIntro = true;
+      logNative("skip intro manual at " + Math.round(currentTime()) + " -> "
+        + settings.introSeconds);
       backend.seek(settings.introSeconds);
       toast("Abertura pulada");
       updateSkipPill();
@@ -510,13 +523,13 @@
       var action = "";
       var label = "";
 
-      if (time > settings.introSeconds + 2) didSkipIntro = false;
+      if (time > settings.introSeconds + 6) didSkipIntro = false;
 
       if (
         settings.introSeconds >= 5 &&
         total > settings.introSeconds + 20 &&
         time > 0.5 &&
-        time < settings.introSeconds - 1 &&
+        time < settings.introSeconds + 2 &&
         !didSkipIntro
       ) {
         action = "skipIntro";
@@ -749,19 +762,28 @@
       if (ready && !didAdvance) {
         if (Math.abs(time - lastSavedTick) >= 5) saveProgress(time, total);
 
+        var jumped = Math.abs(time - lastObservedTime);
+        var crossedIntro = lastObservedTime > 0.5 &&
+          lastObservedTime < settings.introSeconds &&
+          time >= settings.introSeconds &&
+          jumped <= 8;
+
         if (
           settings.introSeconds >= 5 &&
           total > settings.introSeconds + 20 &&
-          time > 0.5 &&
-          time < settings.introSeconds - 1 &&
+          ((time > 0.5 && time < settings.introSeconds + 2) || crossedIntro) &&
           settings.skipIntro &&
           !paused &&
           !didSkipIntro
         ) {
           didSkipIntro = true;
+          logNative("skip intro auto at " + Math.round(time) + " -> "
+            + settings.introSeconds);
           backend.seek(settings.introSeconds);
           toast("Abertura pulada");
         }
+
+        lastObservedTime = time;
 
         var inEnding =
           settings.endingSeconds >= 5 &&
@@ -783,7 +805,7 @@
         !menuKind &&
         !paused &&
         !state.ended &&
-        Date.now() - lastActivity > 5000
+        Date.now() - lastActivity > 4000
       ) {
         setChrome(false);
       }
@@ -806,6 +828,7 @@
     }
 
     root.addEventListener("pointerdown", touch, true);
+    root.addEventListener("pointermove", touch, { passive: true, capture: true });
 
     root.addEventListener("click", function (event) {
       var target = event.target.closest ? event.target.closest("[data-act]") : null;
@@ -920,7 +943,68 @@
       }
     });
 
+    var lastPinchAt = 0;
+    var pinchStartDistance = 0;
+    var pinchTriggered = false;
+
+    function pinchDistance(touches) {
+      if (!touches || touches.length < 2) return 0;
+      var dx = touches[0].clientX - touches[1].clientX;
+      var dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function resetPinch() {
+      pinchStartDistance = 0;
+      pinchTriggered = false;
+    }
+
+    gesture.addEventListener("touchstart", function (event) {
+      if (event.touches && event.touches.length === 2) {
+        pinchStartDistance = pinchDistance(event.touches);
+        pinchTriggered = false;
+      }
+    }, { passive: true });
+
+    gesture.addEventListener("touchmove", function (event) {
+      if (pinchTriggered || pinchStartDistance <= 0) return;
+      if (!event.touches || event.touches.length !== 2) return;
+      var ratio = pinchDistance(event.touches) / pinchStartDistance;
+      if (ratio >= 1.35) {
+        pinchTriggered = true;
+        lastPinchAt = Date.now();
+        if (!fill) {
+          setFill(true);
+          toast("Tela preenchida");
+        }
+      } else if (ratio <= 0.72) {
+        pinchTriggered = true;
+        lastPinchAt = Date.now();
+        if (fill) {
+          setFill(false);
+          toast("Tamanho original");
+        }
+      }
+    }, { passive: true });
+
+    gesture.addEventListener("touchend", resetPinch, { passive: true });
+    gesture.addEventListener("touchcancel", resetPinch, { passive: true });
+
+    // Trackpad pinch (Ctrl+wheel) on desktop.
+    root.addEventListener("wheel", function (event) {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      if (event.deltaY < 0 && !fill) {
+        setFill(true);
+        toast("Tela preenchida");
+      } else if (event.deltaY > 0 && fill) {
+        setFill(false);
+        toast("Tamanho original");
+      }
+    }, { passive: false });
+
     gesture.addEventListener("click", function () {
+      if (Date.now() - lastPinchAt < 600) return;
       if (menuKind) {
         closeMenu();
         return;

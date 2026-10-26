@@ -7,7 +7,6 @@ const {
   ipcMain,
   nativeImage,
   nativeTheme,
-  powerMonitor,
   session,
   shell,
   webContents,
@@ -130,20 +129,24 @@ const autoFullscreen = {
   active: false,
   suppressed: false,
   timer: null,
-  idleSeconds: 5,
+  idleSeconds: 4,
+  lastActivityAt: 0,
 };
+
+function noteAutoFullscreenActivity() {
+  autoFullscreen.lastActivityAt = Date.now();
+}
 
 function checkAutoFullscreen() {
   if (!autoFullscreen.enabled || !autoFullscreen.active || autoFullscreen.suppressed) return;
   if (!win || win.isDestroyed() || !win.isVisible() || win.isMinimized()) return;
   if (!win.isFocused() || win.isFullScreen()) return;
 
-  let idle = 0;
-  try {
-    idle = powerMonitor.getSystemIdleTime();
-  } catch (_) {
-    return;
-  }
+  // On macOS powerMonitor.getSystemIdleTime() can stay at zero for apps that
+  // are not trusted for accessibility. Use the activity reported by the
+  // player page instead, which is reliable on both platforms.
+  if (!autoFullscreen.lastActivityAt) noteAutoFullscreenActivity();
+  const idle = (Date.now() - autoFullscreen.lastActivityAt) / 1000;
   if (idle < autoFullscreen.idleSeconds) return;
 
   win.setFullScreen(true);
@@ -709,17 +712,25 @@ ipcMain.handle('window:fullscreen', (_event, value) => {
 });
 
 ipcMain.on('player:active', (_event, active) => {
+  const wasActive = autoFullscreen.active;
   autoFullscreen.active = !!active;
+  if (autoFullscreen.active && !wasActive) noteAutoFullscreenActivity();
+});
+
+ipcMain.on('player:activity', () => {
+  noteAutoFullscreenActivity();
 });
 
 ipcMain.on('auto-fullscreen:enabled', (_event, enabled) => {
   const next = !!enabled;
   if (next && !autoFullscreen.enabled) autoFullscreen.suppressed = false;
   autoFullscreen.enabled = next;
+  if (next) noteAutoFullscreenActivity();
 });
 
 ipcMain.on('auto-fullscreen:reset', () => {
   autoFullscreen.suppressed = false;
+  noteAutoFullscreenActivity();
 });
 
 ipcMain.on('window:title', (_event, title) => {

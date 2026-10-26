@@ -8,6 +8,20 @@ function sendNative(type, data) {
   } catch (_) {}
 }
 
+function reportActivity() {
+  try { ipcRenderer.send('player:activity'); } catch (_) {}
+}
+
+window.addEventListener('pointermove', reportActivity, { passive: true });
+window.addEventListener('pointerdown', reportActivity, { passive: true });
+window.addEventListener('keydown', reportActivity, true);
+window.addEventListener('wheel', reportActivity, { passive: true });
+window.addEventListener('focus', reportActivity);
+document.addEventListener('visibilitychange', function () {
+  if (!document.hidden) reportActivity();
+});
+reportActivity();
+
 // Bridge used by the native (ffmpeg + Chromium) player page.
 contextBridge.exposeInMainWorld('DesktopPlayer', {
   prepare: (payload) => ipcRenderer.invoke('native:prepare', payload),

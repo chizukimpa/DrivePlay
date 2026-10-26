@@ -828,6 +828,7 @@
     }
 
     root.addEventListener("pointerdown", touch, true);
+    root.addEventListener("pointermove", touch, { passive: true, capture: true });
 
     root.addEventListener("click", function (event) {
       var target = event.target.closest ? event.target.closest("[data-act]") : null;

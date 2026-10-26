@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('api', {
   setPlayerMuted: (muted) => ipcRenderer.send('player:mute', muted),
   setPlayerFill: (enabled) => ipcRenderer.send('player:fill', !!enabled),
   setPlayerActive: (active) => ipcRenderer.send('player:active', !!active),
+  playerActivity: () => ipcRenderer.send('player:activity'),
   setAutoFullscreenEnabled: (enabled) =>
     ipcRenderer.send('auto-fullscreen:enabled', !!enabled),
   resetAutoFullscreen: () => ipcRenderer.send('auto-fullscreen:reset'),

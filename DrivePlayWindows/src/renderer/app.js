@@ -47,6 +47,14 @@ import {
 } from './player.js';
 
 const api = window.api;
+
+// Keep the auto-fullscreen timer in sync with real user activity. Events
+// inside the native player are reported by player-preload.js.
+['pointerdown', 'pointermove', 'keydown', 'wheel'].forEach(function (name) {
+  document.addEventListener(name, function () {
+    if (api.playerActivity) api.playerActivity();
+  }, { passive: true });
+});
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
 
@@ -258,9 +266,11 @@ function syncAutoFullscreen() {
     state.modalStack.length > 0 ||
     !!($('#menu-root') && $('#menu-root').childElementCount) ||
     !!($('#popover-root') && $('#popover-root').childElementCount);
+  // The Drive preview player is a cross-origin iframe, so the host cannot
+  // always see hasVideo. Being on the player screen is enough for the
+  // auto-fullscreen timer.
   api.setPlayerActive(
     !!state.currentID &&
-      state.player.hasVideo &&
       !state.player.hasEnded &&
       !state.isLoading &&
       !overlaysOpen
@@ -557,7 +567,7 @@ function settingsPopoverHTML() {
     ${toggleRowHTML('autoNext', 'Avançar para o próximo episódio', settings.autoNext)}
     ${toggleRowHTML('resumePlayback', 'Retomar de onde parou', settings.resumePlayback)}
     ${toggleRowHTML('showSkipButtons', 'Mostrar botões de pular', settings.showSkipButtons)}
-    ${toggleRowHTML('autoFullscreen', 'Entrar em tela cheia do vídeo após 5 s sem atividade', settings.autoFullscreen)}
+    ${toggleRowHTML('autoFullscreen', 'Entrar em tela cheia do vídeo após 4 s sem atividade', settings.autoFullscreen)}
 
     <div class="popover-divider"></div>
 
@@ -3021,7 +3031,7 @@ function showHelp() {
     ${helpRowHTML(
       'fullscreen',
       'Tela cheia automática do vídeo',
-      'Com um vídeo aberto, se você não mexer no mouse ou no teclado por 5 segundos, o app entra em tela cheia. Você pode desativar em Reprodução → Configurações. Depois de sair manualmente da tela cheia, ela volta a entrar apenas no próximo episódio.'
+      'Com um vídeo aberto, se você não mexer no mouse ou no teclado por 4 segundos, o app entra em tela cheia. Você pode desativar em Reprodução → Configurações. Depois de sair manualmente da tela cheia, ela volta a entrar apenas no próximo episódio.'
     )}
     ${helpRowHTML(
       'chevronRight',
