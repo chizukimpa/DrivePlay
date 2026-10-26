@@ -98,6 +98,7 @@ public class MainActivity extends Activity {
     private int lastDensityDpi;
     /** Avoids a recreate loop when Samsung refuses to fix the window. */
     private static String lastRecreateKey = "";
+    private static int lastRecreateCount;
     private static long lastRecreateAt;
     /** Set between onRetainNonConfigurationInstance and onDestroy. */
     private boolean handoffPending;
@@ -417,11 +418,7 @@ public class MainActivity extends Activity {
     private void ensureFullWindow() {
         if (destroyed || isFinishing() || isChangingConfigurations()) return;
         if (Build.VERSION.SDK_INT < 30 || isInMultiWindowMode()) return;
-        if (isCoverScreen()) {
-            // A new fold starts a new attempt when the phone is opened again.
-            lastRecreateKey = "";
-            return;
-        }
+        if (isCoverScreen()) return;
         try {
             android.view.Display display = getDisplay();
             if (display == null) return;
@@ -452,12 +449,19 @@ public class MainActivity extends Activity {
     private void requestWindowRecreate(final String reason, final int displayId) {
         if (destroyed || isFinishing() || isChangingConfigurations()) return;
         final String key = displayId + ":" + reason;
-        if (key.equals(lastRecreateKey)) return;
         long now = SystemClock.elapsedRealtime();
-        if (now - lastRecreateAt < 1500) return;
-        lastRecreateKey = key;
+        if (key.equals(lastRecreateKey)) {
+            // Allow one retry in case the first recreation came too early,
+            // then stop to avoid an endless loop.
+            if (lastRecreateCount >= 2 || now - lastRecreateAt < 2500) return;
+            lastRecreateCount++;
+        } else {
+            lastRecreateKey = key;
+            lastRecreateCount = 1;
+        }
         lastRecreateAt = now;
-        android.util.Log.d("DrivePlay", "window recreate " + key);
+        android.util.Log.d("DrivePlay", "window recreate " + key
+            + " attempt=" + lastRecreateCount);
         handler.postDelayed(new Runnable() {
             @Override public void run() {
                 if (!destroyed && !isFinishing()) recreate();
@@ -466,7 +470,14 @@ public class MainActivity extends Activity {
     }
 
     private void applyCoverMode() {
+        boolean wasCover = coverMode;
         coverMode = isCoverScreen();
+        if (wasCover && !coverMode) {
+            // Unfolding starts a fresh attempt; the window may have been
+            // recreated for the cover in the previous direction.
+            lastRecreateKey = "";
+            lastRecreateCount = 0;
+        }
         String command = "window.__dpSetCover && window.__dpSetCover(" + coverMode + ");"
             + "window.dispatchEvent(new Event('resize'));";
         if (appView != null) {
