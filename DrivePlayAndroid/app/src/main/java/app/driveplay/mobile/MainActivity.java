@@ -927,9 +927,28 @@ public class MainActivity extends Activity {
                 && Math.abs(height - window.height()) <= toleranceH) {
                 return true;
             }
-            requestWindowRecreate("webview size " + width + "x" + height
-                + " window " + window.width() + "x" + window.height(),
-                currentDisplayId());
+            int displayId = currentDisplayId();
+            String reason = "webview size " + width + "x" + height
+                + " window " + window.width() + "x" + window.height();
+            String key = displayId + ":" + reason;
+            if (key.equals(lastRecreateKey) && lastRecreateCount >= 1 &&
+                playerOverlay == null) {
+                if (!key.equals(lastRelaunchKey)) {
+                    lastRelaunchKey = key;
+                    int panelWidth = window.width();
+                    int panelHeight = window.height();
+                    try {
+                        android.view.Display display = getDisplay();
+                        if (display != null) {
+                            panelWidth = display.getMode().getPhysicalWidth();
+                            panelHeight = display.getMode().getPhysicalHeight();
+                        }
+                    } catch (Exception ignored) {}
+                    relaunchFullWindow(displayId, panelWidth, panelHeight);
+                }
+                return false;
+            }
+            requestWindowRecreate(reason, displayId);
             return false;
         } catch (Exception ignored) {
             return true;
