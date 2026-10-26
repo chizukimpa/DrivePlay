@@ -942,7 +942,68 @@
       }
     });
 
+    var lastPinchAt = 0;
+    var pinchStartDistance = 0;
+    var pinchTriggered = false;
+
+    function pinchDistance(touches) {
+      if (!touches || touches.length < 2) return 0;
+      var dx = touches[0].clientX - touches[1].clientX;
+      var dy = touches[0].clientY - touches[1].clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    }
+
+    function resetPinch() {
+      pinchStartDistance = 0;
+      pinchTriggered = false;
+    }
+
+    gesture.addEventListener("touchstart", function (event) {
+      if (event.touches && event.touches.length === 2) {
+        pinchStartDistance = pinchDistance(event.touches);
+        pinchTriggered = false;
+      }
+    }, { passive: true });
+
+    gesture.addEventListener("touchmove", function (event) {
+      if (pinchTriggered || pinchStartDistance <= 0) return;
+      if (!event.touches || event.touches.length !== 2) return;
+      var ratio = pinchDistance(event.touches) / pinchStartDistance;
+      if (ratio >= 1.35) {
+        pinchTriggered = true;
+        lastPinchAt = Date.now();
+        if (!fill) {
+          setFill(true);
+          toast("Tela preenchida");
+        }
+      } else if (ratio <= 0.72) {
+        pinchTriggered = true;
+        lastPinchAt = Date.now();
+        if (fill) {
+          setFill(false);
+          toast("Tamanho original");
+        }
+      }
+    }, { passive: true });
+
+    gesture.addEventListener("touchend", resetPinch, { passive: true });
+    gesture.addEventListener("touchcancel", resetPinch, { passive: true });
+
+    // Trackpad pinch (Ctrl+wheel) on desktop.
+    root.addEventListener("wheel", function (event) {
+      if (!event.ctrlKey) return;
+      event.preventDefault();
+      if (event.deltaY < 0 && !fill) {
+        setFill(true);
+        toast("Tela preenchida");
+      } else if (event.deltaY > 0 && fill) {
+        setFill(false);
+        toast("Tamanho original");
+      }
+    }, { passive: false });
+
     gesture.addEventListener("click", function () {
+      if (Date.now() - lastPinchAt < 600) return;
       if (menuKind) {
         closeMenu();
         return;
