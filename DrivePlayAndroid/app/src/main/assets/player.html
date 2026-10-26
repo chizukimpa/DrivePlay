@@ -5,6 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
   <meta name="theme-color" content="#000000">
   <title>DrivePlay</title>
+  <script>
+    try {
+      if (/[?&]native=1(?:&|$)/.test(location.search)) {
+        document.documentElement.classList.add("dp-native");
+      }
+    } catch (error) {}
+  </script>
+  <style>
+    html.dp-native,
+    html.dp-native body {
+      background: transparent !important;
+    }
+  </style>
   <link rel="stylesheet" href="player.css">
 </head>
 <body>

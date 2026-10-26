@@ -144,6 +144,8 @@ public class MainActivity extends Activity {
         DriveMedia.setAccessToken(GoogleOAuth.cachedToken(this));
         fillScreen = readFillScreen(settingsJson);
         coverMode = isCoverScreen();
+        android.util.Log.d("DrivePlay", "activity onCreate display=" + currentDisplayId()
+            + " " + configInfo(getResources().getConfiguration()));
 
         Window window = getWindow();
         window.setStatusBarColor(Color.parseColor("#0b0c10"));
@@ -253,6 +255,14 @@ public class MainActivity extends Activity {
                 return insets;
             }
         });
+    }
+
+    private static String configInfo(Configuration configuration) {
+        if (configuration == null) return "?";
+        return configuration.screenWidthDp + "x" + configuration.screenHeightDp
+            + " dp/dpi=" + configuration.densityDpi
+            + " smallest=" + configuration.smallestScreenWidthDp
+            + " orient=" + configuration.orientation;
     }
 
     private boolean isCoverScreen() {
@@ -1961,6 +1971,8 @@ public class MainActivity extends Activity {
     @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
+        android.util.Log.d("DrivePlay", "activity configChanged "
+            + configInfo(newConfig) + " display=" + currentDisplayId());
         if (root != null) root.requestApplyInsets();
         applyCoverMode();
         forceBrowserLayout();
@@ -1996,6 +2008,9 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        android.util.Log.d("DrivePlay", "activity onDestroy finishing=" + isFinishing()
+            + " changing=" + isChangingConfigurations()
+            + " overlay=" + (playerOverlay != null));
         destroyed = true;
         if (handler != null) {
             if (autoFullscreenLoop != null) handler.removeCallbacks(autoFullscreenLoop);
