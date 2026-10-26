@@ -851,9 +851,42 @@ public class MainActivity extends Activity {
      * view size; an unnecessary reload would restart the video chrome.
      */
     private void ensureBrowserViewports() {
+        boolean appOk = checkNativeSize(appView);
+        if (playerView != null) checkNativeSize(playerView);
+        if (localPlayerView != null) checkNativeSize(localPlayerView);
+        if (!appOk) return;
         checkViewport(appView, "file:///android_asset/index.html", false);
         if (playerView != null) checkViewport(playerView, null, true);
         if (localPlayerView != null) checkViewport(localPlayerView, null, false);
+    }
+
+    /**
+     * The WebView can keep the previous display's measured size (for example
+     * 1080x2640 from the inner screen) after the task moves to the cover. In
+     * that state the page paints outside the visible window and the screen
+     * looks black. A fresh activity gets the right size.
+     */
+    private boolean checkNativeSize(WebView view) {
+        if (view == null) return true;
+        int width = view.getWidth();
+        int height = view.getHeight();
+        if (width <= 0 || height <= 0) return true;
+        if (Build.VERSION.SDK_INT < 30) return true;
+        try {
+            android.graphics.Rect window =
+                getWindowManager().getCurrentWindowMetrics().getBounds();
+            if (window.width() <= 0 || window.height() <= 0) return true;
+            if (Math.abs(width - window.width()) <= 40
+                && Math.abs(height - window.height()) <= 40) {
+                return true;
+            }
+            requestWindowRecreate("webview size " + width + "x" + height
+                + " window " + window.width() + "x" + window.height(),
+                currentDisplayId());
+            return false;
+        } catch (Exception ignored) {
+            return true;
+        }
     }
 
     private void checkViewport(final WebView view, final String fallbackUrl,
