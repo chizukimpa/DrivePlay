@@ -2581,11 +2581,6 @@ public class MainActivity extends Activity {
                 ensureBrowserViewports();
             }
         }, 320);
-        if (displayChanged && lastDisplayId >= 0) {
-            // Same DPI on both panels, so the density check above does not
-            // fire. The WebView keeps the previous panel's layout otherwise.
-            requestWindowRecreate("display " + lastDisplayId + "->" + displayId, displayId);
-        }
         lastDisplayId = displayId;
         handler.postDelayed(new Runnable() {
             @Override public void run() {
