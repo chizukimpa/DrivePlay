@@ -156,7 +156,12 @@ async function resolveViaApi(fileId, apiKey) {
       media = looksLikeMedia(head) || type.startsWith('video/');
     } else {
       media = type.startsWith('video/') || type === 'application/octet-stream' || !type;
-      try { if (response.body) response.body.cancel(); } catch (_) {}
+      try {
+        if (response.body && !response.body.locked) {
+          const pending = response.body.cancel();
+          if (pending && pending.catch) pending.catch(() => {});
+        }
+      } catch (_) {}
     }
     if (!media) return null;
 
@@ -349,6 +354,7 @@ function probe(mediaUrl, timeoutMs) {
       clearTimeout(timer);
       const tracks = parseTracks(stderr);
       if (!tracks.audio.length && !tracks.text.length && !tracks.videoWidth) {
+        console.warn('DrivePlay: ffmpeg probe failed:', stderr.slice(-1200));
         const firstError = /(Invalid data|moov atom not found|No such file|Server returned|Error opening input)/i.exec(stderr);
         resolve({
           error: 'O ffmpeg não reconheceu o vídeo'
@@ -610,12 +616,17 @@ class MediaServer {
   }
 
   async proxyDrive(entry, req, res) {
+    console.log('DrivePlay media proxy', req.method, req.headers.range || '(no range)',
+      entry.url.slice(0, 110));
     const ses = session.fromPartition(PARTITION);
     const headers = {
       'User-Agent': USER_AGENT,
       'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
     };
-    if (req.headers.range) headers.Range = req.headers.range;
+    // Google's API answers 206 for ranged requests even when the full
+    // download quota is exhausted. Players often start with no Range header
+    // (ffmpeg does), so always ask for a range.
+    headers.Range = req.headers.range || 'bytes=0-';
 
     let upstream;
     try {
@@ -631,6 +642,8 @@ class MediaServer {
     }
 
     const type = String(upstream.headers.get('content-type') || '').toLowerCase();
+    console.log('DrivePlay media upstream', upstream.status, type,
+      upstream.headers.get('content-range') || '', upstream.headers.get('content-length') || '');
     if (type.includes('text/html')) {
       const html = await upstream.text();
       res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -652,7 +665,12 @@ class MediaServer {
 
     res.writeHead(upstream.status, responseHeaders);
     if (req.method === 'HEAD' || !upstream.body) {
-      try { if (upstream.body) upstream.body.cancel(); } catch (_) {}
+      try {
+        if (upstream.body && !upstream.body.locked) {
+          const pending = upstream.body.cancel();
+          if (pending && pending.catch) pending.catch(() => {});
+        }
+      } catch (_) {}
       res.end();
       return;
     }
@@ -663,7 +681,12 @@ class MediaServer {
     });
     res.on('close', () => {
       try { stream.destroy(); } catch (_) {}
-      try { upstream.body.cancel(); } catch (_) {}
+      try {
+        if (upstream.body && !upstream.body.locked) {
+          const pending = upstream.body.cancel();
+          if (pending && pending.catch) pending.catch(() => {});
+        }
+      } catch (_) {}
     });
     stream.pipe(res);
   }

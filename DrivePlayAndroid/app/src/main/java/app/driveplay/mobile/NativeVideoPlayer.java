@@ -269,6 +269,39 @@ final class NativeVideoPlayer {
         });
     }
 
+    /**
+     * Plays a content:// URI (local file or Google Drive provider selected via
+     * the system picker) with the same native player used for Drive originals.
+     * This keeps audio/subtitle track selection and cues available.
+     */
+    void openUri(final Uri uri, final String title) {
+        if (uri == null) return;
+        pendingTitle = title;
+        currentFileId = "";
+        fallbackStarted = false;
+        fallbackFromCache = false;
+        retryInFlight = false;
+        android.util.Log.d("DrivePlay", "native open uri " + uri);
+        main.post(new Runnable() {
+            @Override public void run() {
+                sendState(0, 0, true, false, "Preparando o vídeo…");
+            }
+        });
+        try {
+            releasePlayer();
+            DefaultDataSource.Factory dataSource = new DefaultDataSource.Factory(context);
+            createPlayer(dataSource);
+            player.setMediaItem(MediaItem.fromUri(uri));
+            player.prepare();
+            player.play();
+            resetContentDetection();
+            startPump();
+            scheduleContentDetection();
+        } catch (Throwable error) {
+            fail("Falha ao abrir o vídeo: " + error.getMessage());
+        }
+    }
+
     private void startPlayback(String url, String title) {
         releasePlayer();
         try {
@@ -293,17 +326,20 @@ final class NativeVideoPlayer {
             .setAllowCrossProtocolRedirects(true)
             .setConnectTimeoutMs(20000)
             .setReadTimeoutMs(30000);
+
+        Map<String, String> headers = new HashMap<>();
+        // The Drive API answers 403 for a full download when the file quota is
+        // exhausted, but 206 for a ranged request. Always start with a range;
+        // ExoPlayer overrides it with the real range when seeking.
+        headers.put("Range", "bytes=0-");
         if (streaming) {
-            Map<String, String> headers = new HashMap<>();
             headers.put("Referer", "https://drive.google.com/");
             headers.put("Origin", "https://drive.google.com");
-            http.setDefaultRequestProperties(headers);
         } else {
             String cookie = DriveMedia.cookieFor(url);
-            if (!TextUtils.isEmpty(cookie)) {
-                http.setDefaultRequestProperties(Collections.singletonMap("Cookie", cookie));
-            }
+            if (!TextUtils.isEmpty(cookie)) headers.put("Cookie", cookie);
         }
+        http.setDefaultRequestProperties(headers);
         return http;
     }
 

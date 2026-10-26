@@ -968,14 +968,25 @@
   var PLAY_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>';
   var CHEVRON_SVG = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>';
 
+  function driveThumbURL(id) {
+    if (!id || /^(local|saf|content):/i.test(String(id))) return "";
+    return "https://drive.google.com/thumbnail?id=" + encodeURIComponent(id) + "&sz=w320";
+  }
+
+  function entryThumbURL(entry) {
+    if (!entry || entry.isFolder) return "";
+    return thumbnailURL(entry) || driveThumbURL(entry.id);
+  }
+
   function thumbHtml(entry) {
-    var url = thumbnailURL(entry);
     var cls = "thumb" + (entry.isFolder ? " folder" : "");
-    if (url) {
-      return '<div class="' + cls + '"><img loading="lazy" src="' + escapeHtml(url) +
-        '" alt="" referrerpolicy="no-referrer"></div>';
+    var fallback = driveThumbURL(entry.id);
+    var url = entryThumbURL(entry);
+    if (!url) {
+      return '<div class="' + cls + '">' + (entry.isFolder ? FOLDER_SVG : PLAY_SVG) + '</div>';
     }
-    return '<div class="' + cls + '">' + (entry.isFolder ? FOLDER_SVG : PLAY_SVG) + '</div>';
+    return '<div class="' + cls + '"><img loading="lazy" src="' + escapeHtml(url) +
+      '" data-fallback="' + escapeHtml(fallback) + '" alt="" referrerpolicy="no-referrer"></div>';
   }
 
   function entryMeta(entry) {
@@ -1021,7 +1032,7 @@
       $("#continueList").innerHTML = items.map(function (item) {
         var found = findEntry(item.id);
         var entry = found ? found.entry : null;
-        var thumb = entry ? thumbnailURL(entry) : "";
+        var thumb = entry ? driveThumbURL(entry.id) : driveThumbURL(item.id);
         var percent = item.progress.duration > 0
           ? Math.min(100, Math.round((item.progress.time / item.progress.duration) * 100))
           : 0;
@@ -1484,6 +1495,7 @@
 
   function pickLocalVideo() {
     if (window.Android && typeof window.Android.pickVideo === "function") {
+      toast("Escolha o vídeo no celular ou no Google Drive.");
       try {
         window.Android.pickVideo();
         return;
@@ -2179,6 +2191,23 @@
       if (!menu || (event.key !== "Enter" && event.key !== " ")) return;
       event.preventDefault();
       openEpisodeActions(menu.getAttribute("data-menu-id"));
+    }, true);
+
+    document.addEventListener("error", function (event) {
+      var image = event.target;
+      if (!image || image.tagName !== "IMG" || !image.dataset.fallback) return;
+      var fallback = image.dataset.fallback;
+      if (image.getAttribute("src") !== fallback) {
+        image.dataset.fallback = "";
+        image.setAttribute("src", fallback);
+        return;
+      }
+      var thumb = image.closest ? image.closest(".thumb") : null;
+      if (!thumb) return;
+      var folder = thumb.classList.contains("folder");
+      image.remove();
+      thumb.insertAdjacentHTML("beforeend", folder ? FOLDER_SVG :
+        '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5v14M16 5v14M3 9h5M3 15h5M16 9h5M16 15h5"/></svg>');
     }, true);
 
     var coverResizeTimer = null;

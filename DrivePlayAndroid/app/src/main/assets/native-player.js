@@ -43,6 +43,7 @@
   var index = parseInt(param("index", "0"), 10);
   if (!isFinite(index) || index < 0) index = 0;
   var skipResume = param("skipResume", "0") === "1";
+  var isLocal = param("local", "0") === "1";
   var playlist = [];
   try {
     playlist = JSON.parse(param("playlist", "[]")) || [];
@@ -145,7 +146,7 @@
     settings: settings,
     fill: settings.fillScreen === true,
     cover: cover,
-    canOpenExternal: true,
+    canOpenExternal: !isLocal,
     canSetQuality: false,
     backend: {
       mount: function () { /* the video is a native TextureView behind the page */ },

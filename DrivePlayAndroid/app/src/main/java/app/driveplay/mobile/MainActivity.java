@@ -87,6 +87,7 @@ public class MainActivity extends Activity {
     private TextView playerTitleView;
     private TextView playerFillButton;
     private boolean playerIsLocal;
+    private Uri currentLocalUri;
     private boolean playerOverlayActive;
     private boolean videoDetected;
     private boolean videoPlaying;
@@ -416,6 +417,10 @@ public class MainActivity extends Activity {
             JSONObject json = new JSONObject(raw);
             String id = json.optString("id", "");
             if (TextUtils.isEmpty(id)) return;
+            if (id.startsWith("local:")) {
+                openLocalById(id);
+                return;
+            }
             showPlayer(id, json.optString("title", "Vídeo do Drive"),
                 json.optString("playlist", "[]"));
         } catch (Exception ignored) {
@@ -584,7 +589,8 @@ public class MainActivity extends Activity {
             "&title=" + Uri.encode(currentTitle) +
             "&index=" + playlistIndex +
             "&playlist=" + Uri.encode(playlistJson()) +
-            (skipResume ? "&skipResume=1" : "");
+            (skipResume ? "&skipResume=1" : "") +
+            (playerIsLocal ? "&local=1" : "");
     }
 
     /**
@@ -685,6 +691,12 @@ public class MainActivity extends Activity {
         handler.post(new Runnable() {
             @Override public void run() {
                 if (destroyed) return;
+                if (id.startsWith("local:")) {
+                    if (!openLocalById(id)) {
+                        toast("Abra o vídeo local novamente pelo seletor de arquivos.");
+                    }
+                    return;
+                }
                 showPlayer(id, name, json);
             }
         });
@@ -1161,6 +1173,7 @@ public class MainActivity extends Activity {
         playerFillButton = null;
         playerOverlayActive = false;
         playerIsLocal = false;
+        currentLocalUri = null;
         playlist = new ArrayList<>();
         playlistIndex = -1;
         currentFileId = "";
@@ -1436,8 +1449,10 @@ public class MainActivity extends Activity {
     // ---------------------------------------------------------------------
 
     private void showLocalVideo(Uri uri, String title) {
+        if (uri == null) return;
         closePlayer();
         playerIsLocal = true;
+        currentLocalUri = uri;
         currentFileId = "local:" + Integer.toHexString(uri.toString().hashCode());
         currentTitle = cleanTitle(title, "Vídeo local");
         rememberLocalUri(currentFileId, uri);
@@ -1445,45 +1460,20 @@ public class MainActivity extends Activity {
         playlist = new ArrayList<>();
         playlist.add(new MediaItem(currentFileId, currentTitle));
         playlistIndex = 0;
+        savePlayerSession();
 
         buildPlayerShell();
-
-        localPlayerView = new WebView(this);
-        configureWebView(localPlayerView, false);
-        localPlayerView.addJavascriptInterface(new PlayerBridge(), "PlayerBridge");
-        localPlayerView.addJavascriptInterface(new AppBridge(), "Android");
-        localPlayerView.setWebChromeClient(new PlayerChromeClient());
-        localPlayerView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return handlePlayerUrl(request.getUrl());
-            }
-
-            @Override
-            public void onReceivedError(WebView view, WebResourceRequest request,
-                                        WebResourceError error) {
-                if (request.isForMainFrame()) {
-                    toast("Não foi possível abrir o player local.");
-                }
-            }
-        });
-        localPlayerView.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View view, MotionEvent event) {
-                userTouched();
-                return false;
-            }
-        });
-
-        playerOverlay.addView(localPlayerView, match());
+        buildNativeVideo(currentFileId, currentTitle);
+        buildPlayerOverlayPage(currentFileId, currentTitle);
         resetPlayerState();
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        String url = "file:///android_asset/player.html" +
-            "?id=" + Uri.encode(currentFileId) +
-            "&title=" + Uri.encode(currentTitle) +
-            "&src=" + Uri.encode(uri.toString());
-        localPlayerView.loadUrl(url);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        requestNotificationPermission();
+        addLibraryToApp(currentFileId, currentTitle, uri.toString());
+        lastServicePlaying = true;
+        PlaybackService.rememberTitle(currentTitle);
+        PlaybackService.start(this, true);
+        nativePlayer.openUri(uri, currentTitle);
     }
 
     private float readVideoAspect(Uri uri) {
@@ -2455,7 +2445,12 @@ public class MainActivity extends Activity {
         public void nativeRetry() {
             runOnUiThread(new Runnable() {
                 @Override public void run() {
-                    if (nativePlayer == null || TextUtils.isEmpty(currentFileId)) return;
+                    if (nativePlayer == null) return;
+                    if (playerIsLocal && currentLocalUri != null) {
+                        nativePlayer.openUri(currentLocalUri, currentTitle);
+                        return;
+                    }
+                    if (TextUtils.isEmpty(currentFileId)) return;
                     String cookie = DriveMedia.loginCookie();
                     nativePlayer.open(currentFileId, currentTitle, cookie);
                 }
