@@ -93,6 +93,7 @@ public class MainActivity extends Activity {
     private boolean videoPlaying;
     private boolean lastServicePlaying;
     private boolean launchedWithLink;
+    private static final boolean SKIP_PANEL_RELAUNCH = true;
     private int lastDisplayId = -1;
     private int lastChromeDisplayId = -1;
     private int lastDensityDpi;
@@ -542,6 +543,8 @@ public class MainActivity extends Activity {
      */
     private void requestWindowRecreate(final String reason, final int displayId) {
         if (destroyed || isFinishing() || isChangingConfigurations()) return;
+        if (SKIP_PANEL_RELAUNCH && !reason.startsWith("density")
+                && !reason.startsWith("webview density")) return;
         final String key = displayId + ":" + reason;
         long now = SystemClock.elapsedRealtime();
         if (key.equals(lastRecreateKey)) {
@@ -565,6 +568,7 @@ public class MainActivity extends Activity {
 
     private void relaunchFullWindow(int displayId, int width, int height) {
         if (destroyed || isFinishing()) return;
+        if (SKIP_PANEL_RELAUNCH) return;
         // A preview player has no native handoff; clearing the task would
         // close it. Keep the preview and let recreate() handle the layout.
         if (playerOverlay != null &&
@@ -1201,6 +1205,25 @@ public class MainActivity extends Activity {
                 reloadPlayerChrome();
             }
         }, 220);
+    }
+
+    private void refreshWebViewsAfterPanelSwitch() {
+        // A panel switch does not make the WebView redraw at the new size the
+        // way a rotation does; repeat the redraw on the views that stay alive.
+        for (final WebView view : new WebView[] { appView, playerView, localPlayerView }) {
+            if (view == null) continue;
+            handler.postDelayed(new Runnable() {
+                @Override public void run() {
+                    if (destroyed) return;
+                    view.onPause();
+                    view.onResume();
+                    view.requestLayout();
+                    view.invalidate();
+                    view.evaluateJavascript(
+                        "window.dispatchEvent(new Event('resize'));", null);
+                }
+            }, 400);
+        }
     }
 
     /** Forces the WebViews to measure again after a fold/unfold or display move. */
@@ -2559,6 +2582,7 @@ public class MainActivity extends Activity {
 
         int displayId = currentDisplayId();
         boolean displayChanged = displayId != lastDisplayId;
+        if (displayChanged && lastDisplayId >= 0) refreshWebViewsAfterPanelSwitch();
         if (playerView != null) {
             playerView.evaluateJavascript(
                 "window.__dpResize && window.__dpResize();", null);

@@ -3,6 +3,7 @@
 
   var LIBRARY_KEY = "driveplay.android.library.v3";
   var SETTINGS_KEY = "driveplay.android.settings.v3";
+  var ROOT_TAB_KEY = "driveplay.android.rootTab.v1";
 
   var DEFAULTS = {
     skipIntro: false,
@@ -883,6 +884,7 @@
     state.history = [];
     state.view = view;
     state.tab = view;
+    storageSet(ROOT_TAB_KEY, { view: view, at: Date.now() });
     state.collectionID = null;
     state.folder = null;
     render();
@@ -2555,6 +2557,14 @@
   function init() {
     state.settings = loadSettings();
     state.library = normalizeLibrary(storageGet(LIBRARY_KEY, null));
+    // The native side recreates the page when the window moves between the
+    // cover and the inner screen; keep the root tab across that reload.
+    var savedTab = storageGet(ROOT_TAB_KEY, null);
+    if (savedTab && Date.now() - (savedTab.at || 0) < 30000 &&
+        ["home", "collections", "settings"].indexOf(savedTab.view) >= 0) {
+      state.view = savedTab.view;
+      state.tab = savedTab.view;
+    }
     bindUi();
     bindSettings();
     syncSettings();
