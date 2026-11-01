@@ -1,7 +1,7 @@
-# DrivePlay para Windows
+# DrivePlay para Windows, macOS e Linux
 
 Leitor de vídeos (MKV, AVI, MP4…) hospedados no **Google Drive**, com a mesma
-interface e as mesmas funções do DrivePlay para macOS.
+interface e as mesmas funções nas três plataformas.
 
 Você cola o link de uma pasta ou de um vídeo e o conteúdo toca dentro do app, com
 player próprio: **MKV toca direto**, inclusive com as **faixas de áudio** e as
@@ -11,31 +11,57 @@ automaticamente o preview do Google Drive.
 
 ## Requisitos
 
-- Windows 10 ou 11, 64 bits
-- VLC instalado (opcional; só para abrir o arquivo original em outro player) —
-  https://www.videolan.org/vlc/download-windows.html
-- Conexão com a internet
+- **Windows 10 ou 11**, 64 bits.
+- **macOS 14 ou mais recente**, Intel ou Apple Silicon.
+- **Linux x86_64** (Fedora 39+, Debian 12+, Ubuntu 22.04+ ou qualquer distro com
+  AppImage), Wayland ou X11.
+- VLC instalado (opcional; só para abrir o arquivo original em outro player).
+- Conexão com a internet.
+
+O ffmpeg do player nativo vai incluído no pacote. No Linux, o app usa a moldura
+nativa do GNOME/KDE e grava os dados em `~/.config/DrivePlay`.
 
 ## Baixar e instalar
 
 Na página de **Releases** do GitHub:
 
-| Arquivo | Como usar |
-| --- | --- |
-| `DrivePlay-Setup-1.2.0-x64.exe` | **Instalador.** Instala em `Arquivos de Programas`, cria atalhos na área de trabalho e no menu Iniciar. Os dados ficam em `%APPDATA%\DrivePlay`. |
-| `DrivePlay-Portable-1.2.0-x64.exe` | **Portátil em um único arquivo.** Não instala nada. Os dados ficam em `DrivePlayData` ao lado do `.exe`. |
-| `DrivePlay-1.2.0-win32-x64-portable.zip` | **Pasta portátil.** Extraia e execute `DrivePlay.exe`. Os dados ficam em `DrivePlayData` dentro da pasta. |
+| Sistema | Arquivo | Como usar |
+| --- | --- | --- |
+| Windows | `DrivePlay-Setup-1.4.0-x64.exe` | **Instalador.** Instala em `Arquivos de Programas`, cria atalhos na área de trabalho e no menu Iniciar. Os dados ficam em `%APPDATA%\DrivePlay`. |
+| Windows | `DrivePlay-Portable-1.4.0-x64.exe` | **Portátil em um único arquivo.** Não instala nada. Os dados ficam em `DrivePlayData` ao lado do `.exe`. |
+| Windows | `DrivePlay-1.4.0-win32-x64-portable.zip` | **Pasta portátil.** Extraia e execute `DrivePlay.exe`. Os dados ficam em `DrivePlayData` dentro da pasta. |
+| macOS | `DrivePlay-macOS-universal-1.4.0.zip` | **App universal.** Extraia e arraste o `DrivePlay.app` para `Aplicativos`. |
+| Linux (Fedora) | `DrivePlay-Linux-1.4.0-x86_64.rpm` | `sudo dnf install ./DrivePlay-Linux-1.4.0-x86_64.rpm` |
+| Linux (Debian/Ubuntu) | `DrivePlay-Linux-1.4.0-amd64.deb` | `sudo apt install ./DrivePlay-Linux-1.4.0-amd64.deb` |
+| Linux (geral) | `DrivePlay-Linux-1.4.0-x86_64.AppImage` | `chmod +x` e execute. Não precisa instalar. |
 
 > O app ainda não tem assinatura digital paga. Na primeira execução o Windows pode
 > mostrar o **SmartScreen**: clique em **Mais informações → Executar assim mesmo**.
-> Isso é esperado para builds não assinados.
+> No macOS, clique com o botão direito no app → **Abrir**. No Linux, confirme a
+> instalação do pacote local quando o gerenciador avisar que ele não tem assinatura
+> GPG. Isso é esperado para builds não assinados.
+
+### Fedora
+
+```bash
+sudo dnf install ./DrivePlay-Linux-1.4.0-x86_64.rpm
+```
+
+Se preferir o VLC pelo Flatpak (comum no Fedora):
+
+```bash
+flatpak install flathub org.videolan.VLC
+```
+
+O DrivePlay encontra tanto o VLC do sistema (`/usr/bin/vlc`) quanto o Flatpak
+(`org.videolan.VLC`).
 
 ## Usar
 
 1. No Google Drive, compartilhe o **vídeo** ou a **pasta** com
    **Qualquer pessoa com o link** → **Copiar link**.
 2. Abra o DrivePlay, cole o link no campo superior e clique em **Abrir**
-   (ou use `Ctrl+Shift+V` para colar e reproduzir na hora).
+   (ou use `Ctrl+Shift+V` / `Cmd+Shift+V` para colar e reproduzir na hora).
 3. Se for uma pasta, a lista de episódios aparece ao lado; clique em um episódio
    para tocar.
 
@@ -44,8 +70,8 @@ lista e retoma o episódio de onde você parou.
 
 ### Biblioteca de coleções
 
-O botão **Biblioteca** (ou `Ctrl+B`) abre uma biblioteca local de links. É ali que
-você junta várias temporadas de um anime em uma única lista:
+O botão **Biblioteca** (ou `Ctrl+B` / `Cmd+B`) abre uma biblioteca local de links.
+É ali que você junta várias temporadas de um anime em uma única lista:
 
 1. Clique em **Biblioteca** e escolha uma coleção (a padrão se chama
    **Minha biblioteca**; use **+** para criar outras, por exemplo “Bleach”).
@@ -55,33 +81,35 @@ você junta várias temporadas de um anime em uma única lista:
    tenham sido adicionadas fora de ordem: `S04E01…S04E28` → `S05E01…S05E18`.
 
 Também dá para adicionar a pasta que está aberta: no cabeçalho da lista, clique no
-ícone de **favorito** (ou use **Adicionar à biblioteca** na tela inicial da pasta)
-e escolha a coleção.
+ícone de **favorito** (ou use **Adicionar à biblioteca** na tela inicial da pasta) e
+escolha a coleção.
 
 Em **Gerenciar fontes** você vê as pastas/arquivos de cada coleção, remove uma fonte,
 atualiza a lista para pegar episódios novos e **move** a fonte para outra coleção.
 Nada é apagado do Google Drive: a biblioteca guarda apenas os links e os nomes dos
 episódios.
 
-Para levar a biblioteca do DrivePlay do macOS para o Windows, feche os dois apps e
-copie o arquivo `library.json` de `~/Library/Application Support/DrivePlay/` para:
+Para levar a biblioteca entre computadores, feche os dois apps e copie o arquivo
+`library.json` de:
 
-- instalador: `%APPDATA%\DrivePlay\library.json`
-- portátil: `DrivePlayData\library.json` ao lado do `DrivePlay.exe`
+- Windows instalado: `%APPDATA%\DrivePlay\library.json`
+- Windows portátil: `DrivePlayData\library.json` ao lado do `DrivePlay.exe`
+- macOS: `~/Library/Application Support/DrivePlay/library.json`
+- Linux: `~/.config/DrivePlay/library.json`
 
 O app aceita o formato antigo (lista) e o novo (coleções).
 
 ### Pastas e episódios
 
-Ao abrir o link de uma pasta compartilhada, o app lista os vídeos com miniatura,
-nome e data. A lista tem busca, navegação por subpastas (com botão de voltar) e
-mostra o progresso de cada episódio:
+Ao abrir o link de uma pasta compartilhada, o app lista os vídeos com miniatura, nome
+e data. A lista tem busca, navegação por subpastas (com botão de voltar) e mostra o
+progresso de cada episódio:
 
 - **✓** no canto da miniatura: episódio já assistido.
 - **Barra colorida** na base da miniatura: quanto do episódio você já assistiu.
 
 Use o botão de lista no rodapé (ou o cabeçalho) para mostrar/ocultar a lista, e
-`Ctrl+←` / `Ctrl+→` (ou as setas no rodapé) para voltar/avançar de episódio.
+`Ctrl+←` / `Ctrl+→` (ou `Cmd+←` / `Cmd+→` no macOS) para voltar/avançar de episódio.
 
 ### Player integrado (MKV, áudio e legendas)
 
@@ -91,24 +119,23 @@ próprio em tela cheia:
 - **Um clique** mostra os controles; outro clique esconde.
 - Barra de progresso arrastável, **−10 s / +10 s**, play/pause e velocidade
   (0,5× a 2×).
-- **Episódio anterior/próximo** e **Preencher a tela** (corta as bordas para
-  remover as faixas pretas).
+- **Episódio anterior/próximo** e **Preencher a tela** (corta as bordas para remover
+  as faixas pretas).
 - No menu (⋮): **faixa de áudio** e **legendas embutidas** do MKV.
-- **Estilo da legenda**: tamanho, cor (branco, amarelo ou ciano), contorno,
-  fonte e fundo.
+- **Estilo da legenda**: tamanho, cor (branco, amarelo ou ciano), contorno, fonte e
+  fundo.
 - **Abertura automática** e **encerramento automático** com os tempos padrão de
   **120 s** e **190 s**.
 - **Abrir no Chrome** e **Fechar player**.
 
-A primeira troca para uma faixa de áudio ou legenda alternativa prepara a faixa
-com o ffmpeg incluído no app; isso leva alguns segundos e fica em cache. A faixa
+A primeira troca para uma faixa de áudio ou legenda alternativa prepara a faixa com
+o ffmpeg incluído no app; isso leva alguns segundos e fica em cache. A faixa
 principal toca imediatamente.
 
-Se o Google Drive bloquear o download do arquivo original (limite de downloads)
-ou o codec não for compatível, o app avisa e abre automaticamente o **player do
-Drive**, que transcodifica no servidor. Nesse modo há uma faixa de áudio e não há
-legendas embutidas; entrar na conta Google no player costuma liberar o arquivo
-original.
+Se o Google Drive bloquear o download do arquivo original (limite de downloads) ou o
+codec não for compatível, o app avisa e abre automaticamente o **player do Drive**,
+que transcodifica no servidor. Nesse modo há uma faixa de áudio e não há legendas
+embutidas; entrar na conta Google no player costuma liberar o arquivo original.
 
 ### Menu de botão direito
 
@@ -146,15 +173,15 @@ quiser.
 
 ### Botões do rodapé
 
-O rodapé aparece no modo de compatibilidade (preview do Drive). No player
-integrado, os controles ficam dentro do próprio vídeo e o rodapé fica oculto.
+O rodapé aparece no modo de compatibilidade (preview do Drive). No player integrado,
+os controles ficam dentro do próprio vídeo e o rodapé fica oculto.
 
 | Botão | O que faz |
 | --- | --- |
 | Lista | Mostra/oculta a lista de episódios. |
 | ‹ / › | Episódio anterior / próximo. |
 | Pular | Abre as opções de pulo de abertura/encerramento. |
-| Download | Baixa o vídeo original para `Downloads`. |
+| Download | Baixa o vídeo original para a pasta `Downloads`. |
 | VLC | Abre o stream direto no VLC (legendas e qualidade original). |
 | Navegador | Abre o arquivo no Google Drive no navegador. |
 | Copiar | Copia o link de compartilhamento. |
@@ -162,6 +189,9 @@ integrado, os controles ficam dentro do próprio vídeo e o rodapé fica oculto.
 | Tela cheia | Entra/sai da tela cheia (`F11`). |
 
 ### Atalhos
+
+No macOS, use `Cmd` no lugar de `Ctrl`. A tela cheia é `Ctrl+Cmd+F` no macOS e
+`F11` no Windows/Linux.
 
 | Atalho | Ação |
 | --- | --- |
@@ -189,38 +219,42 @@ ativada. A chave usa a cota do seu projeto, separada da cota anônima do site.
 
 O player integrado pede ao Drive o **arquivo original** (com todas as faixas). Se o
 Drive responder com a página de **“Limite ultrapassado”**, o app não insiste: abre o
-preview do Drive e avisa. Nesse modo o Google transcodifica o vídeo no servidor,
-com uma faixa de áudio e sem legendas embutidas.
+preview do Drive e avisa. Nesse modo o Google transcodifica o vídeo no servidor, com
+uma faixa de áudio e sem legendas embutidas.
 
-Para arquivos privados, o player nativo, o download e o VLC usam a mesma sessão.
-Para arquivos públicos, tudo funciona sem login (sujeito ao limite de downloads do
-Google).
+Para arquivos privados, o player nativo, o download e o VLC usam a mesma sessão. Para
+arquivos públicos, tudo funciona sem login (sujeito ao limite de downloads do Google).
 
 ## VLC
 
-O botão **Abrir no VLC** procura o VLC nos caminhos padrão do Windows:
+O botão **Abrir no VLC** procura o VLC nos caminhos padrão de cada sistema:
 
-- `C:\Program Files\VideoLAN\VLC\vlc.exe`
-- `C:\Program Files (x86)\VideoLAN\VLC\vlc.exe`
-- `%LOCALAPPDATA%\Programs\VideoLAN\VLC\vlc.exe`
-- onde o comando `vlc` estiver no `PATH`
+- **Windows:** `C:\Program Files\VideoLAN\VLC\vlc.exe`,
+  `C:\Program Files (x86)\VideoLAN\VLC\vlc.exe`,
+  `%LOCALAPPDATA%\Programs\VideoLAN\VLC\vlc.exe` e o comando `vlc` no `PATH`.
+- **macOS:** `/Applications/VLC.app/Contents/MacOS/VLC` e
+  `~/Applications/VLC.app/Contents/MacOS/VLC`.
+- **Linux:** `/usr/bin/vlc`, `/usr/local/bin/vlc`, `/snap/bin/vlc`,
+  `/var/lib/flatpak/exports/bin/org.videolan.VLC`,
+  `~/.local/share/flatpak/exports/bin/org.videolan.VLC` e o comando `vlc` no `PATH`.
 
-Se não encontrar, o app oferece a página de download do VLC. O player integrado
-já toca MKV com faixas de áudio e legendas embutidas; o VLC fica como opção para
-abrir o arquivo original em outro programa.
+Se não encontrar, o app oferece a página de download do VLC. O player integrado já
+toca MKV com faixas de áudio e legendas embutidas; o VLC fica como opção para abrir o
+arquivo original em outro programa.
 
 ## Compilar
 
-Requisitos: Node.js 22 ou mais recente e npm. O player integrado usa um binário
-do ffmpeg em `tools/ffmpeg/<plataforma>/` (não versionado no Git).
+Requisitos: Node.js 22 ou mais recente e npm. O player integrado usa um binário do
+ffmpeg em `tools/ffmpeg/<plataforma>/` (não versionado no Git).
 
-```bat
+```bash
 cd DrivePlayWindows
 npm install
+./scripts/fetch-ffmpeg.sh
 npm start
 ```
 
-Para gerar os executáveis no Windows:
+### Windows
 
 ```bat
 npm run dist:win
@@ -228,8 +262,8 @@ npm run dist:win
 
 Isso gera, em `dist`:
 
-- `DrivePlay-Setup-1.2.0-x64.exe` (instalador NSIS)
-- `DrivePlay-Portable-1.2.0-x64.exe` (portátil em um arquivo)
+- `DrivePlay-Setup-1.4.0-x64.exe` (instalador NSIS)
+- `DrivePlay-Portable-1.4.0-x64.exe` (portátil em um arquivo)
 
 Para gerar a pasta portátil com `@electron/packager`:
 
@@ -237,18 +271,44 @@ Para gerar a pasta portátil com `@electron/packager`:
 npm run pack:win
 ```
 
-Para gerar o app universal do macOS (Intel e Apple Silicon):
+### macOS
 
 ```bash
 npm run dist:mac
 ```
 
-O ffmpeg é copiado para dentro do app (`Resources/ffmpeg`). Para baixar os
-binários usados nos builds, rode `./scripts/fetch-ffmpeg.sh`.
+Gera o app universal (Intel e Apple Silicon) em
+`dist/DrivePlay-macOS-universal-1.4.0.zip`.
+
+### Linux (Fedora)
+
+```bash
+sudo dnf install -y rpm-build xz
+npm run dist:linux
+```
+
+Gera em `dist`:
+
+- `DrivePlay-Linux-1.4.0-x86_64.AppImage`
+- `DrivePlay-Linux-1.4.0-amd64.deb`
+- `DrivePlay-Linux-1.4.0-x86_64.rpm`
+
+Também é possível gerar um alvo por vez:
+
+```bash
+npm run dist:linux:rpm
+npm run dist:linux:deb
+npm run dist:linux:appimage
+```
+
+Em Debian/Ubuntu, instale o `rpm` (`sudo apt install -y rpm`) para gerar o pacote do
+Fedora. O ffmpeg é copiado para dentro do app (`Resources/ffmpeg`); para baixar os
+binários usados nos builds, rode `./scripts/fetch-ffmpeg.sh` (baixa Windows, macOS
+Intel/ARM e Linux x64/ARM64).
 
 O GitHub Actions em `.github/workflows/release.yml` compila automaticamente as
-versões do Windows e do macOS quando uma tag `v*` é enviada, e publica os arquivos
-na página de Releases.
+versões do Windows, do macOS e do Linux quando uma tag `v*` é enviada, e publica os
+arquivos na página de Releases.
 
 ## Estrutura
 
@@ -278,17 +338,28 @@ src/
 
 ## Solução de problemas
 
-- **SmartScreen / “O Windows protegeu o computador”** — build sem assinatura;
-  clique em **Mais informações → Executar assim mesmo**.
+- **SmartScreen / “O Windows protegeu o computador”** — build sem assinatura; clique
+  em **Mais informações → Executar assim mesmo**.
+- **macOS bloqueou o app** — clique com o botão direito no `DrivePlay.app` → **Abrir**
+  na primeira execução.
+- **Linux: instalação do rpm** — builds não são assinados com GPG; confirme a
+  instalação do pacote local. Se o AppImage não abrir, verifique `chmod +x` e, em
+  distros sem FUSE 2, execute com `--appimage-extract-and-run`.
+- **Linux: janela sem o tema certo no Wayland** — o app detecta Wayland/X11
+  automaticamente; em GPUs problemáticas, rode com
+  `--ozone-platform=x11` para usar XWayland.
 - **“Faça login na sua Conta do Google…”** — entre na conta Google na janela do
   player; a sessão fica salva. Alternativamente, baixe o arquivo ou use o VLC.
-- **VLC não encontrado** — instale o VLC ou marque “Adicionar ao PATH” na instalação.
-- **Player em branco** — use **Recarregar** no rodapé ou `Ctrl+R`; verifique a conexão.
-- **“Limite de downloads” do Drive** — o app cai sozinho no player do Drive. Para
-  usar o arquivo original (com todas as faixas e legendas), entre na conta Google no
-  player ou copie o arquivo para o seu próprio Drive.
+- **VLC não encontrado** — instale o VLC (no Fedora, RPM Fusion ou Flatpak) ou marque
+  “Adicionar ao PATH” na instalação do Windows.
+- **Player em branco** — use **Recarregar** no rodapé ou `Ctrl+R`; verifique a
+  conexão.
+- **“Limite de downloads” do Drive** — o app cai sozinho no player do Drive. Para usar
+  o arquivo original (com todas as faixas e legendas), entre na conta Google no player
+  ou copie o arquivo para o seu próprio Drive.
 - **Codec não suportado** — o app abre o preview do Drive automaticamente. Para
-  imagem e faixas originais, use **Abrir no VLC**, **Baixar** ou **Abrir no navegador**.
+  imagem e faixas originais, use **Abrir no VLC**, **Baixar** ou **Abrir no
+  navegador**.
 - **Download não começa** — para arquivos privados, faça login no player; para
   públicos, verifique se o link permite download.
 
