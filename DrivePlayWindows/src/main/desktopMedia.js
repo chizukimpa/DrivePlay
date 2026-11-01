@@ -84,6 +84,46 @@ function ffmpegPath() {
   return candidates[0];
 }
 
+async function authCookieHeader(url) {
+  const ses = session.fromPartition(PARTITION);
+  const targets = new Set([url, 'https://drive.google.com/']);
+  try { targets.add(new URL(url).origin + '/'); } catch (_) {}
+  const parts = [];
+  const seen = new Set();
+  for (const target of targets) {
+    let cookies = [];
+    try { cookies = await ses.cookies.get({ url: target }); } catch (_) {}
+    for (const cookie of cookies) {
+      if (!cookie || !cookie.name || seen.has(cookie.name)) continue;
+      seen.add(cookie.name);
+      parts.push(cookie.name + '=' + cookie.value);
+    }
+  }
+  return parts.join('; ');
+}
+
+/*
+ * Media transfers use Node's fetch (undici), not session.fetch: Chromium's
+ * network service crashes when several 1080p MKV ranges are streamed at the
+ * same time, and every pending request then hangs forever. The session cookies
+ * are copied into the request so private Drive files keep working.
+ */
+async function fetchUpstream(url, options) {
+  const headers = { ...((options && options.headers) || {}) };
+  const cookie = await authCookieHeader(url);
+  if (cookie && !headers.Cookie) headers.Cookie = cookie;
+  return fetch(url, { ...options, headers });
+}
+
+function discardBody(response) {
+  try {
+    const body = response && response.body;
+    if (!body || body.locked) return;
+    const pending = body.cancel();
+    if (pending && pending.catch) pending.catch(() => {});
+  } catch (_) {}
+}
+
 function decodeEntities(value) {
   return String(value || '')
     .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
@@ -131,13 +171,12 @@ function looksLikeMedia(buffer) {
  */
 async function resolveViaApi(fileId, apiKey) {
   if (!apiKey) return null;
-  const ses = session.fromPartition(PARTITION);
   const url = 'https://www.googleapis.com/drive/v3/files/' + encodeURIComponent(fileId)
     + '?alt=media&supportsAllDrives=true&key=' + encodeURIComponent(apiKey);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 9000);
   try {
-    const response = await ses.fetch(url, {
+    const response = await fetchUpstream(url, {
       redirect: 'follow',
       signal: controller.signal,
       headers: {
@@ -151,7 +190,10 @@ async function resolveViaApi(fileId, apiKey) {
       try { await response.arrayBuffer(); } catch (_) {}
       return null;
     }
-    if (type.includes('text/html') || type.includes('application/json')) return null;
+    if (type.includes('text/html') || type.includes('application/json')) {
+      discardBody(response);
+      return null;
+    }
 
     const contentRange = response.headers.get('content-range') || '';
     const contentLength = parseInt(response.headers.get('content-length') || '', 10);
@@ -195,13 +237,12 @@ async function resolveDrive(fileId, apiKey) {
     if (viaApi) return viaApi;
   }
 
-  const ses = session.fromPartition(PARTITION);
   let url = 'https://drive.google.com/uc?export=download&id=' + encodeURIComponent(fileId);
 
   for (let hop = 0; hop < 6; hop += 1) {
     let response;
     try {
-      response = await ses.fetch(url, {
+      response = await fetchUpstream(url, {
         redirect: 'follow',
         headers: {
           'User-Agent': USER_AGENT,
@@ -227,15 +268,20 @@ async function resolveDrive(fileId, apiKey) {
     }
 
     if (response.status >= 400) {
+      discardBody(response);
       return { error: 'O Drive respondeu HTTP ' + response.status + ' para este arquivo.' };
     }
 
     const length = parseInt(response.headers.get('content-length') || '', 10);
-    return {
+    const resolved = {
       url: response.url || url,
       contentType: type,
       length: Number.isFinite(length) ? length : -1,
     };
+    // Só precisamos dos cabeçalhos aqui; descartar o corpo libera a conexão
+    // do Chromium para o ffmpeg e o player abrirem as próximas requisições.
+    discardBody(response);
+    return resolved;
   }
 
   return { error: 'Não foi possível resolver o endereço do vídeo no Drive.' };
@@ -623,7 +669,6 @@ class MediaServer {
   async proxyDrive(entry, req, res) {
     console.log('DrivePlay media proxy', req.method, req.headers.range || '(no range)',
       entry.url.slice(0, 110));
-    const ses = session.fromPartition(PARTITION);
     const headers = {
       'User-Agent': USER_AGENT,
       'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
@@ -633,16 +678,39 @@ class MediaServer {
     // (ffmpeg does), so always ask for a range.
     headers.Range = req.headers.range || 'bytes=0-';
 
+    // ffmpeg fecha a conexão assim que lê o cabeçalho do MKV, e o Chromium
+    // cancela requisições ao trocar de faixa ou buscar. Sem abortar o fetch
+    // do Chromium, cada uma dessas conexões fica presa no pool e o player
+    // para de abrir novas requisições (ficava carregando para sempre).
+    const controller = new AbortController();
+    let clientGone = false;
+    const abortUpstream = () => {
+      if (clientGone) return;
+      clientGone = true;
+      try { controller.abort(); } catch (_) {}
+    };
+    res.on('close', abortUpstream);
+    res.on('error', abortUpstream);
+
     let upstream;
     try {
-      upstream = await ses.fetch(entry.url, {
+      upstream = await fetchUpstream(entry.url, {
         redirect: 'follow',
         method: req.method === 'HEAD' ? 'HEAD' : 'GET',
         headers,
+        signal: controller.signal,
       });
     } catch (error) {
-      res.writeHead(502, { 'Content-Type': 'text/plain' });
-      res.end('Falha ao ler o vídeo: ' + error.message);
+      if (clientGone || controller.signal.aborted) return;
+      try {
+        res.writeHead(502, { 'Content-Type': 'text/plain' });
+        res.end('Falha ao ler o vídeo: ' + error.message);
+      } catch (_) {}
+      return;
+    }
+
+    if (clientGone) {
+      discardBody(upstream);
       return;
     }
 
@@ -651,8 +719,10 @@ class MediaServer {
       upstream.headers.get('content-range') || '', upstream.headers.get('content-length') || '');
     if (type.includes('text/html')) {
       const html = await upstream.text();
-      res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
-      res.end(htmlError(html));
+      try {
+        res.writeHead(403, { 'Content-Type': 'text/plain; charset=utf-8' });
+        res.end(htmlError(html));
+      } catch (_) {}
       return;
     }
 
@@ -668,30 +738,36 @@ class MediaServer {
       if (value) responseHeaders[name] = value;
     }
 
+    if (clientGone) {
+      discardBody(upstream);
+      return;
+    }
     res.writeHead(upstream.status, responseHeaders);
     if (req.method === 'HEAD' || !upstream.body) {
-      try {
-        if (upstream.body && !upstream.body.locked) {
-          const pending = upstream.body.cancel();
-          if (pending && pending.catch) pending.catch(() => {});
-        }
-      } catch (_) {}
+      discardBody(upstream);
       res.end();
       return;
     }
 
-    const stream = Readable.fromWeb(upstream.body);
+    let stream;
+    try {
+      stream = Readable.fromWeb(upstream.body);
+    } catch (error) {
+      abortUpstream();
+      discardBody(upstream);
+      try {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Falha ao ler o vídeo: ' + error.message);
+      } catch (_) {}
+      return;
+    }
     stream.on('error', () => {
+      abortUpstream();
       try { res.destroy(); } catch (_) {}
     });
     res.on('close', () => {
+      abortUpstream();
       try { stream.destroy(); } catch (_) {}
-      try {
-        if (upstream.body && !upstream.body.locked) {
-          const pending = upstream.body.cancel();
-          if (pending && pending.catch) pending.catch(() => {});
-        }
-      } catch (_) {}
     });
     stream.pipe(res);
   }

@@ -47,13 +47,28 @@
   var fallbackTried = false;
   var failureSent = false;
   var supportProbeTimer = null;
+  var metadataTimer = null;
   var supportProbeAttempts = 0;
 
   function reportFailure(message) {
     if (failureSent) return;
     failureSent = true;
+    if (metadataTimer) {
+      clearTimeout(metadataTimer);
+      metadataTimer = null;
+    }
     if (api.failed) {
       try { api.failed(message); } catch (error) {}
+    }
+  }
+
+  function failToPreview(message) {
+    if (fallbackTried || failureSent) return;
+    fallbackTried = true;
+    if (player) {
+      player.showError(message);
+    } else {
+      reportFailure(message);
     }
   }
 
@@ -66,16 +81,20 @@
 
       supportProbeAttempts += 1;
       if (video.readyState >= 1 && video.duration > 0) {
-        fallbackTried = true;
-        if (player) {
-          player.showError(
-            "Este vídeo usa um codec que o player integrado não consegue exibir. "
-            + "Abrindo o player do Drive…"
-          );
-        }
+        failToPreview(
+          "Este vídeo usa um codec que o player integrado não consegue exibir. "
+          + "Abrindo o player do Drive…"
+        );
         return;
       }
-      if (supportProbeAttempts < 5) scheduleSupportProbe();
+      if (supportProbeAttempts < 5) {
+        scheduleSupportProbe();
+      } else {
+        failToPreview(
+          "O player integrado não conseguiu abrir este vídeo a tempo. "
+          + "Abrindo o player do Drive…"
+        );
+      }
     }, 6000);
   }
 
@@ -246,6 +265,10 @@
 
   function attachVideoEvents() {
     video.addEventListener("loadedmetadata", function () {
+      if (metadataTimer) {
+        clearTimeout(metadataTimer);
+        metadataTimer = null;
+      }
       refreshState();
       signalReady();
       if (resume > 5 && resume < (video.duration || 0) - 5) {
@@ -280,7 +303,7 @@
         : code === 3 ? "O vídeo está corrompido ou usa um codec não suportado."
         : code === 4 ? "Este formato não é compatível com o player."
         : "Não foi possível reproduzir este vídeo.";
-      if (player) player.showError(message);
+      failToPreview(message + " Abrindo o player do Drive…");
     });
   }
 
@@ -298,6 +321,16 @@
     stage.appendChild(video);
     attachVideoEvents();
     scheduleSupportProbe();
+
+    if (metadataTimer) clearTimeout(metadataTimer);
+    metadataTimer = setTimeout(function () {
+      if (!video || fallbackTried) return;
+      if (video.readyState >= 1 && isFinite(video.duration) && video.duration > 0) return;
+      failToPreview(
+        "O player integrado não conseguiu abrir este vídeo (conexão lenta ou "
+        + "formato não suportado). Abrindo o player do Drive…"
+      );
+    }, 20000);
 
     currentAudio = defaultAudioIndex();
     currentText = -1;
@@ -463,6 +496,7 @@
       selectText: selectText,
       destroy: function () {
         if (supportProbeTimer) clearTimeout(supportProbeTimer);
+        if (metadataTimer) clearTimeout(metadataTimer);
         clearAudio();
         if (video) {
           try {
