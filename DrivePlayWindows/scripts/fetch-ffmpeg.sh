@@ -20,9 +20,12 @@ fetch() {
   chmod +x "$out"
 }
 
-mkdir -p tools/ffmpeg/darwin-x64 tools/ffmpeg/darwin-arm64 tools/ffmpeg/win32-x64
+mkdir -p tools/ffmpeg/darwin-x64 tools/ffmpeg/darwin-arm64 tools/ffmpeg/win32-x64 \
+  tools/ffmpeg/linux-x64 tools/ffmpeg/linux-arm64
 fetch "$BASE/ffmpeg-darwin-x64.gz" "tools/ffmpeg/darwin-x64/ffmpeg"
 fetch "$BASE/ffmpeg-darwin-arm64.gz" "tools/ffmpeg/darwin-arm64/ffmpeg"
 fetch "$BASE/ffmpeg-win32-x64.gz" "tools/ffmpeg/win32-x64/ffmpeg.exe"
+fetch "$BASE/ffmpeg-linux-x64.gz" "tools/ffmpeg/linux-x64/ffmpeg"
+fetch "$BASE/ffmpeg-linux-arm64.gz" "tools/ffmpeg/linux-arm64/ffmpeg"
 
 echo "ffmpeg pronto em tools/ffmpeg/"

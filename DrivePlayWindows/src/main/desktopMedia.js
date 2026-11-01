@@ -57,6 +57,11 @@ function cacheRoot() {
 function platformKey() {
   if (process.platform === 'win32') return 'win32-x64';
   if (process.platform === 'darwin') return process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64';
+  if (process.platform === 'linux') {
+    if (process.arch === 'arm64') return 'linux-arm64';
+    if (process.arch === 'ia32') return 'linux-ia32';
+    return 'linux-x64';
+  }
   return process.platform + '-' + process.arch;
 }
 

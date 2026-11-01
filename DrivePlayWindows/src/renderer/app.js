@@ -2755,7 +2755,7 @@ async function openInVLC(id = state.currentID) {
           className: 'primary-btn',
           action: () => {
             api.openExternal(
-              result.downloadPage || 'https://www.videolan.org/vlc/download-windows.html'
+              result.downloadPage || 'https://www.videolan.org/vlc/'
             );
           },
         },

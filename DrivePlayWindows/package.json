@@ -1,21 +1,32 @@
 {
   "name": "driveplay",
   "productName": "DrivePlay",
-  "version": "1.3.0",
-  "description": "DrivePlay para Windows — vídeos MKV do Google Drive com biblioteca de temporadas",
+  "version": "1.4.0",
+  "description": "DrivePlay para Windows, macOS e Linux — vídeos MKV do Google Drive com biblioteca de temporadas",
   "main": "src/main.js",
   "author": "DrivePlay",
   "license": "MIT",
   "private": true,
+  "homepage": "https://github.com/chizukimpa/DrivePlay",
+  "desktopName": "driveplay.desktop",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chizukimpa/DrivePlay.git"
+  },
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "pack:win": "electron-packager . DrivePlay --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon.ico --asar --app-version=1.3.0 --extra-resource=tools/ffmpeg/win32-x64/ffmpeg.exe --ignore=\"^/(dist.*|node_modules|prototype|tools|scripts|\\.git|\\.github)$\" --ignore=\"^/(package-lock\\.json|assets/icon\\.icns)$\"",
-    "pack:mac": "electron-packager . DrivePlay --platform=darwin --arch=universal --out=dist --overwrite --icon=assets/icon.icns --asar --app-version=1.3.0 --extra-resource=tools/ffmpeg/darwin-x64/ffmpeg --ignore=\"^/(dist.*|node_modules|prototype|tools|scripts|\\.git|\\.github)$\" --ignore=\"^/(package-lock\\.json|assets/icon\\.ico)$\"",
+    "pack:win": "electron-packager . DrivePlay --platform=win32 --arch=x64 --out=dist --overwrite --icon=assets/icon.ico --asar --app-version=1.4.0 --extra-resource=tools/ffmpeg/win32-x64/ffmpeg.exe --ignore=\"^/(dist.*|node_modules|prototype|tools|scripts|\\.git|\\.github)$\" --ignore=\"^/(package-lock\\.json|assets/icon\\.icns)$\"",
+    "pack:mac": "electron-packager . DrivePlay --platform=darwin --arch=universal --out=dist --overwrite --icon=assets/icon.icns --asar --app-version=1.4.0 --extra-resource=tools/ffmpeg/darwin-x64/ffmpeg --ignore=\"^/(dist.*|node_modules|prototype|tools|scripts|\\.git|\\.github)$\" --ignore=\"^/(package-lock\\.json|assets/icon\\.ico)$\"",
+    "pack:linux": "electron-packager . DrivePlay --platform=linux --arch=x64 --out=dist --overwrite --icon=assets/icon.png --asar --app-version=1.4.0 --extra-resource=tools/ffmpeg/linux-x64/ffmpeg --ignore=\"^/(dist.*|node_modules|prototype|tools|scripts|\\.git|\\.github)$\" --ignore=\"^/(package-lock\\.json|assets/icon\\.(icns|ico))$\"",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
     "dist:win:portable": "electron-builder --win portable",
     "dist:win:installer": "electron-builder --win nsis",
+    "dist:linux": "electron-builder --linux",
+    "dist:linux:appimage": "electron-builder --linux AppImage",
+    "dist:linux:deb": "electron-builder --linux deb",
+    "dist:linux:rpm": "electron-builder --linux rpm",
     "icon": "node scripts/make-icon.js"
   },
   "devDependencies": {
@@ -76,6 +87,49 @@
         {
           "from": "tools/ffmpeg/win32-x64/ffmpeg.exe",
           "to": "ffmpeg/ffmpeg.exe"
+        }
+      ]
+    },
+    "linux": {
+      "category": "AudioVideo",
+      "icon": "assets/icon.png",
+      "executableName": "driveplay",
+      "syncDesktopName": true,
+      "synopsis": "Player de vídeos do Google Drive",
+      "maintainer": "DrivePlay <driveplay@local>",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "rpm",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-Linux-${version}-${arch}.${ext}",
+      "desktop": {
+        "entry": {
+          "Name": "DrivePlay",
+          "Comment": "Player de vídeos do Google Drive",
+          "Categories": "AudioVideo;Video;Player;",
+          "Keywords": "video;drive;mkv;player;legendas;"
+        }
+      },
+      "extraResources": [
+        {
+          "from": "tools/ffmpeg/linux-x64/ffmpeg",
+          "to": "ffmpeg/ffmpeg"
         }
       ]
     },

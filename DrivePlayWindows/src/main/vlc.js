@@ -23,7 +23,17 @@ function candidates() {
     ];
   }
 
-  return ['/usr/bin/vlc', '/usr/local/bin/vlc', '/snap/bin/vlc'];
+  return [
+    '/usr/bin/vlc',
+    '/usr/local/bin/vlc',
+    '/snap/bin/vlc',
+    // Fedora costuma instalar o VLC pelo Flatpak (Flathub).
+    '/var/lib/flatpak/exports/bin/org.videolan.VLC',
+    path.join(
+      process.env.HOME || '',
+      '.local/share/flatpak/exports/bin/org.videolan.VLC'
+    ),
+  ];
 }
 
 function findVLC() {

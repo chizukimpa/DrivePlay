@@ -23,6 +23,14 @@ const desktopMedia = require('./main/desktopMedia');
 const { buildMenu } = require('./main/menu');
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
+// Fedora e as outras distros atuais usam Wayland por padrão. O hint "auto"
+// mantém o app nativo no Wayland e cai para XWayland/X11 quando necessário,
+// sem mudar o comportamento nas outras plataformas.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
+}
+
 app.setName('DrivePlay');
 
 function resolveUserData() {
@@ -30,14 +38,20 @@ function resolveUserData() {
   if (override) return path.resolve(override);
 
   if (!app.isPackaged) {
-    return path.join(app.getPath('appData'), 'DrivePlayWindows');
+    // Mantém a pasta de desenvolvimento do Windows/macOS e usa o nome padrão
+    // no Linux, onde o app instalado grava em ~/.config/DrivePlay.
+    const folder = process.platform === 'linux' ? 'DrivePlay' : 'DrivePlayWindows';
+    return path.join(app.getPath('appData'), folder);
   }
 
+  // O modo portátil é um recurso do build do Windows (pasta ao lado do .exe).
+  // No Linux e no macOS o app usa o diretório padrão do sistema.
   const portableDir = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(process.execPath);
   const portable =
-    !!process.env.PORTABLE_EXECUTABLE_DIR ||
-    process.argv.includes('--portable') ||
-    fs.existsSync(path.join(portableDir, 'portable.txt'));
+    process.platform === 'win32' &&
+    (!!process.env.PORTABLE_EXECUTABLE_DIR ||
+      process.argv.includes('--portable') ||
+      fs.existsSync(path.join(portableDir, 'portable.txt')));
 
   return portable ? path.join(portableDir, 'DrivePlayData') : null;
 }
@@ -434,8 +448,8 @@ function setPlayerFill(enabled) {
 }
 
 function createWindow() {
-  const isMac = process.platform === 'darwin';
   const isWin = process.platform === 'win32';
+  const isLinux = process.platform === 'linux';
   const testMode = process.env.DRIVEPLAY_TEST === '1';
 
   const iconPath = path.join(
@@ -455,8 +469,10 @@ function createWindow() {
     title: 'DrivePlay',
     icon: icon.isEmpty() ? undefined : icon,
     show: false,
-    autoHideMenuBar: isWin,
-    titleBarStyle: isMac ? 'default' : 'hidden',
+    // No Linux a moldura nativa fica com o gerenciador de janelas (GNOME/KDE),
+    // e o menu do app continua acessível com Alt, como nos outros apps GTK.
+    autoHideMenuBar: isWin || isLinux,
+    titleBarStyle: isWin ? 'hidden' : 'default',
     titleBarOverlay: isWin
       ? { color: '#16171c', symbolColor: '#c7c9d1', height: 36 }
       : undefined,
