@@ -27,13 +27,13 @@ Na página de **Releases** do GitHub:
 
 | Sistema | Arquivo | Como usar |
 | --- | --- | --- |
-| Windows | `DrivePlay-Setup-1.4.0-x64.exe` | **Instalador.** Instala em `Arquivos de Programas`, cria atalhos na área de trabalho e no menu Iniciar. Os dados ficam em `%APPDATA%\DrivePlay`. |
-| Windows | `DrivePlay-Portable-1.4.0-x64.exe` | **Portátil em um único arquivo.** Não instala nada. Os dados ficam em `DrivePlayData` ao lado do `.exe`. |
-| Windows | `DrivePlay-1.4.0-win32-x64-portable.zip` | **Pasta portátil.** Extraia e execute `DrivePlay.exe`. Os dados ficam em `DrivePlayData` dentro da pasta. |
-| macOS | `DrivePlay-macOS-universal-1.4.0.zip` | **App universal.** Extraia e arraste o `DrivePlay.app` para `Aplicativos`. |
-| Linux (Fedora) | `DrivePlay-Linux-1.4.0-x86_64.rpm` | `sudo dnf install ./DrivePlay-Linux-1.4.0-x86_64.rpm` |
-| Linux (Debian/Ubuntu) | `DrivePlay-Linux-1.4.0-amd64.deb` | `sudo apt install ./DrivePlay-Linux-1.4.0-amd64.deb` |
-| Linux (geral) | `DrivePlay-Linux-1.4.0-x86_64.AppImage` | `chmod +x` e execute. Não precisa instalar. |
+| Windows | `DrivePlay-Setup-1.4.1-x64.exe` | **Instalador.** Instala em `Arquivos de Programas`, cria atalhos na área de trabalho e no menu Iniciar. Os dados ficam em `%APPDATA%\DrivePlay`. |
+| Windows | `DrivePlay-Portable-1.4.1-x64.exe` | **Portátil em um único arquivo.** Não instala nada. Os dados ficam em `DrivePlayData` ao lado do `.exe`. |
+| Windows | `DrivePlay-1.4.1-win32-x64-portable.zip` | **Pasta portátil.** Extraia e execute `DrivePlay.exe`. Os dados ficam em `DrivePlayData` dentro da pasta. |
+| macOS | `DrivePlay-macOS-universal-1.4.1.zip` | **App universal.** Extraia e arraste o `DrivePlay.app` para `Aplicativos`. |
+| Linux (Fedora) | `DrivePlay-Linux-1.4.1-x86_64.rpm` | `sudo dnf install ./DrivePlay-Linux-1.4.1-x86_64.rpm` |
+| Linux (Debian/Ubuntu) | `DrivePlay-Linux-1.4.1-amd64.deb` | `sudo apt install ./DrivePlay-Linux-1.4.1-amd64.deb` |
+| Linux (geral) | `DrivePlay-Linux-1.4.1-x86_64.AppImage` | `chmod +x` e execute. Não precisa instalar. |
 
 > O app ainda não tem assinatura digital paga. Na primeira execução o Windows pode
 > mostrar o **SmartScreen**: clique em **Mais informações → Executar assim mesmo**.
@@ -44,7 +44,7 @@ Na página de **Releases** do GitHub:
 ### Fedora
 
 ```bash
-sudo dnf install ./DrivePlay-Linux-1.4.0-x86_64.rpm
+sudo dnf install ./DrivePlay-Linux-1.4.1-x86_64.rpm
 ```
 
 Se preferir o VLC pelo Flatpak (comum no Fedora):
@@ -262,8 +262,8 @@ npm run dist:win
 
 Isso gera, em `dist`:
 
-- `DrivePlay-Setup-1.4.0-x64.exe` (instalador NSIS)
-- `DrivePlay-Portable-1.4.0-x64.exe` (portátil em um arquivo)
+- `DrivePlay-Setup-1.4.1-x64.exe` (instalador NSIS)
+- `DrivePlay-Portable-1.4.1-x64.exe` (portátil em um arquivo)
 
 Para gerar a pasta portátil com `@electron/packager`:
 
@@ -278,7 +278,7 @@ npm run dist:mac
 ```
 
 Gera o app universal (Intel e Apple Silicon) em
-`dist/DrivePlay-macOS-universal-1.4.0.zip`.
+`dist/DrivePlay-macOS-universal-1.4.1.zip`.
 
 ### Linux (Fedora)
 
@@ -289,9 +289,9 @@ npm run dist:linux
 
 Gera em `dist`:
 
-- `DrivePlay-Linux-1.4.0-x86_64.AppImage`
-- `DrivePlay-Linux-1.4.0-amd64.deb`
-- `DrivePlay-Linux-1.4.0-x86_64.rpm`
+- `DrivePlay-Linux-1.4.1-x86_64.AppImage`
+- `DrivePlay-Linux-1.4.1-amd64.deb`
+- `DrivePlay-Linux-1.4.1-x86_64.rpm`
 
 Também é possível gerar um alvo por vez:
 
@@ -352,6 +352,9 @@ src/
   player; a sessão fica salva. Alternativamente, baixe o arquivo ou use o VLC.
 - **VLC não encontrado** — instale o VLC (no Fedora, RPM Fusion ou Flatpak) ou marque
   “Adicionar ao PATH” na instalação do Windows.
+- **“Carregando…” infinito em MKV grande** — corrigido na 1.4.1: o proxy agora usa o
+  `fetch` do Node e cancela as conexões antigas com o Drive, e o player cai no preview
+  em 20 s se o streaming falhar. Atualize para a 1.4.1.
 - **Player em branco** — use **Recarregar** no rodapé ou `Ctrl+R`; verifique a
   conexão.
 - **“Limite de downloads” do Drive** — o app cai sozinho no player do Drive. Para usar

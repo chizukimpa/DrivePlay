@@ -71,13 +71,13 @@ Baixe a versão mais recente na página de
 
 | Sistema | Arquivo | Observação |
 | --- | --- | --- |
-| Windows | `DrivePlay-Setup-1.4.0-x64.exe` | Instalador (recomendado). |
-| Windows | `DrivePlay-Portable-1.4.0-x64.exe` | Portátil em um arquivo. |
-| Windows | `DrivePlay-1.4.0-win32-x64-portable.zip` | Pasta portátil. |
-| macOS | `DrivePlay-macOS-universal-1.4.0.zip` | App universal (Intel e Apple Silicon), macOS 14+, com player nativo. |
-| Linux (Fedora) | `DrivePlay-Linux-1.4.0-x86_64.rpm` | Fedora 39+ (x86_64), com player nativo e ffmpeg incluído. |
-| Linux (Debian/Ubuntu) | `DrivePlay-Linux-1.4.0-amd64.deb` | Debian 12+ / Ubuntu 22.04+, com player nativo e ffmpeg incluído. |
-| Linux (geral) | `DrivePlay-Linux-1.4.0-x86_64.AppImage` | Qualquer distro x86_64; não precisa instalar. |
+| Windows | `DrivePlay-Setup-1.4.1-x64.exe` | Instalador (recomendado). |
+| Windows | `DrivePlay-Portable-1.4.1-x64.exe` | Portátil em um arquivo. |
+| Windows | `DrivePlay-1.4.1-win32-x64-portable.zip` | Pasta portátil. |
+| macOS | `DrivePlay-macOS-universal-1.4.1.zip` | App universal (Intel e Apple Silicon), macOS 14+, com player nativo. |
+| Linux (Fedora) | `DrivePlay-Linux-1.4.1-x86_64.rpm` | Fedora 39+ (x86_64), com player nativo e ffmpeg incluído. |
+| Linux (Debian/Ubuntu) | `DrivePlay-Linux-1.4.1-amd64.deb` | Debian 12+ / Ubuntu 22.04+, com player nativo e ffmpeg incluído. |
+| Linux (geral) | `DrivePlay-Linux-1.4.1-x86_64.AppImage` | Qualquer distro x86_64; não precisa instalar. |
 | Android | `DrivePlay-Android-1.3.2.apk` | Android 7+; biblioteca, pastas e player próprios, com tela de capa via MultiStar. |
 
 Os builds não têm assinatura digital paga. No Windows, o SmartScreen pode pedir
@@ -91,20 +91,20 @@ permita a instalação de apps de fontes desconhecidas para o APK.
 Fedora 39 ou mais recente (x86_64):
 
 ```bash
-sudo dnf install ./DrivePlay-Linux-1.4.0-x86_64.rpm
+sudo dnf install ./DrivePlay-Linux-1.4.1-x86_64.rpm
 ```
 
 Debian/Ubuntu:
 
 ```bash
-sudo apt install ./DrivePlay-Linux-1.4.0-amd64.deb
+sudo apt install ./DrivePlay-Linux-1.4.1-amd64.deb
 ```
 
 AppImage (sem instalar; funciona em Fedora, Debian, Ubuntu, Arch e outras distros):
 
 ```bash
-chmod +x DrivePlay-Linux-1.4.0-x86_64.AppImage
-./DrivePlay-Linux-1.4.0-x86_64.AppImage
+chmod +x DrivePlay-Linux-1.4.1-x86_64.AppImage
+./DrivePlay-Linux-1.4.1-x86_64.AppImage
 ```
 
 O app usa a moldura nativa do GNOME/KDE, Wayland ou X11 (detecção automática) e grava
@@ -216,6 +216,19 @@ Requisitos: Android SDK 37, JDK 17 e as ferramentas de build em
 
 ## Releases
 
+### 1.4.1 — correção do carregamento infinito
+
+- Corrige o player nativo que ficava **carregando para sempre** em episódios grandes
+  do Google Drive (MKV de 1080p, cerca de 900 MB a 1,2 GB).
+- O streaming do proxy agora usa o `fetch` do Node em vez do `session.fetch` do
+  Chromium. O network service do Chromium estava caindo ao abrir várias faixas
+  grandes ao mesmo tempo, e as requisições seguintes ficavam penduradas.
+- As conexões com o Drive são canceladas assim que o ffmpeg ou o Chromium terminam
+  de ler cada trecho, liberando o pool para o próximo range.
+- Se o player nativo não conseguir abrir o vídeo em 20 s, ele cai automaticamente no
+  player do Drive em vez de continuar carregando.
+- Windows, macOS e Linux recebem a mesma correção; Android segue na 1.3.2.
+
 ### 1.4.0 — Linux, Windows e macOS
 
 - **Linux:** primeira versão estável do app Electron, com as mesmas funções do
@@ -255,8 +268,8 @@ O workflow em `.github/workflows/release.yml` compila as versões quando uma tag
 `v*` é enviada:
 
 ```bash
-git tag v1.4.0
-git push origin v1.4.0
+git tag v1.4.1
+git push origin v1.4.1
 ```
 
 Ele também pode ser executado manualmente em **Actions → Release → Run workflow**,
