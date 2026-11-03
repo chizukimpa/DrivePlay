@@ -52,7 +52,7 @@ Requisitos: JDK 17, Android SDK platform 37 e build-tools 37.0.0.
 ./build-android.sh
 ```
 
-O APK assinado sai em `build/DrivePlay-Android-1.3.2.apk`.
+O APK assinado sai em `build/DrivePlay-Android-1.3.3.apk`.
 
 Para gerar com outro SDK:
 
@@ -63,7 +63,7 @@ PLATFORM_VERSION=37.0 TARGET_SDK=37 ./build-android.sh
 Para outra versão:
 
 ```bash
-VERSION_NAME=1.3.2 VERSION_CODE=6 ./build-android.sh
+VERSION_NAME=1.3.3 VERSION_CODE=7 ./build-android.sh
 ```
 
 ## Estrutura
@@ -83,7 +83,12 @@ app/src/main/java/.../LibraryStore.java  persistência nativa da biblioteca
 
 ## Versão
 
-1.3.2 (versionCode 6)
+1.3.3 (versionCode 7)
+
+A 1.3.3 corrige o **próximo episódio** no player nativo: o botão de avançar e o
+avanço automático ao terminar (ou ao pular o encerramento) agora chamam a ponte
+`PlayerBridge.next()` e carregam o episódio seguinte da playlist. O botão de episódio
+anterior também foi ligado.
 
 A 1.3.2 mantém a aba ao trocar entre a tela interna e a capa, aplica a densidade do
 painel atual e evita relançar a tela ao trocar de painel.

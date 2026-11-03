@@ -174,6 +174,8 @@
       bridge("saveProgress", fileId, fileTitle, time, duration);
     },
     close: function () { bridge("close"); },
+    next: function () { bridge("next"); },
+    previous: function () { bridge("previous"); },
     openExternal: function () { bridge("openInChrome"); },
     onFill: function (enabled) { bridge("setFill", enabled); },
     saveSettings: function (patch) {

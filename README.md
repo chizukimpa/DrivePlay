@@ -11,7 +11,7 @@ Leitor de vídeos (MKV, AVI, MP4…) hospedados no **Google Drive**, com quatro 
   (Debian/Ubuntu) e **AppImage** (qualquer distro). O app Swift 1.1.0 continua no
   repositório como versão anterior (`DrivePlay/`).
 - **Android** — app WebView nativo, otimizado para celular e para a tela de capa do
-  Galaxy Z Flip 6 via MultiStar (`DrivePlayAndroid/`), na versão 1.3.2.
+  Galaxy Z Flip 6 via MultiStar (`DrivePlayAndroid/`), na versão 1.3.3.
 
 O player nativo toca o **arquivo original do MKV**, com **faixas de áudio** e
 **legendas embutidas**, sem instalar codecs. Quando o Drive bloqueia o download do
@@ -38,7 +38,7 @@ original, o app cai automaticamente no preview do Drive.
 - Download do arquivo original e abertura do stream no VLC.
 - Sessão persistente do Google para arquivos privados.
 
-### Android 1.3.2
+### Android 1.3.3
 
 O Android tem a mesma estrutura dos apps de computador:
 
@@ -54,6 +54,9 @@ O Android tem a mesma estrutura dos apps de computador:
 - Progresso e biblioteca gravados no aparelho (SharedPreferences + armazenamento do
   WebView), então nada se perde ao fechar o app.
 - Interface em português, tema escuro e layout pensado para a tela de capa.
+- A 1.3.3 corrige o **próximo episódio** no player nativo: o botão de avançar e o
+  avanço automático (fim do vídeo ou pulo do encerramento) carregam o próximo item da
+  playlist; o botão de episódio anterior também foi ligado.
 - A 1.3.2 mantém a aba ao trocar entre a tela interna e a capa, aplica a densidade do
   painel atual e evita relançar a tela ao trocar de painel.
 
@@ -78,7 +81,7 @@ Baixe a versão mais recente na página de
 | Linux (Fedora) | `DrivePlay-Linux-1.4.1-x86_64.rpm` | Fedora 39+ (x86_64), com player nativo e ffmpeg incluído. |
 | Linux (Debian/Ubuntu) | `DrivePlay-Linux-1.4.1-amd64.deb` | Debian 12+ / Ubuntu 22.04+, com player nativo e ffmpeg incluído. |
 | Linux (geral) | `DrivePlay-Linux-1.4.1-x86_64.AppImage` | Qualquer distro x86_64; não precisa instalar. |
-| Android | `DrivePlay-Android-1.3.2.apk` | Android 7+; biblioteca, pastas e player próprios, com tela de capa via MultiStar. |
+| Android | `DrivePlay-Android-1.3.3.apk` | Android 7+; biblioteca, pastas e player próprios, com tela de capa via MultiStar. |
 
 Os builds não têm assinatura digital paga. No Windows, o SmartScreen pode pedir
 **Mais informações → Executar assim mesmo**. No macOS, clique com o botão direito no
@@ -210,7 +213,7 @@ cd DrivePlayAndroid
 ./build-android.sh
 ```
 
-O APK assinado fica em `DrivePlayAndroid/build/DrivePlay-Android-1.3.2.apk`.
+O APK assinado fica em `DrivePlayAndroid/build/DrivePlay-Android-1.3.3.apk`.
 Requisitos: Android SDK 37, JDK 17 e as ferramentas de build em
 `$HOME/Library/Android/sdk`.
 
@@ -227,7 +230,15 @@ Requisitos: Android SDK 37, JDK 17 e as ferramentas de build em
   de ler cada trecho, liberando o pool para o próximo range.
 - Se o player nativo não conseguir abrir o vídeo em 20 s, ele cai automaticamente no
   player do Drive em vez de continuar carregando.
-- Windows, macOS e Linux recebem a mesma correção; Android segue na 1.3.2.
+- Windows, macOS e Linux recebem a mesma correção; o Android está na 1.3.3.
+
+### 1.3.3 — Android
+
+- Corrige o **próximo episódio** no player nativo: o botão de avançar e o avanço
+  automático (fim do vídeo ou pulo do encerramento) agora carregam o próximo item da
+  playlist.
+- O botão de episódio anterior também foi ligado.
+- O resto das funções da 1.3.2 continua igual.
 
 ### 1.4.0 — Linux, Windows e macOS
 
