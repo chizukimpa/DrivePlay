@@ -2782,9 +2782,11 @@ public class MainActivity extends Activity {
         public void connectGoogle(final String clientId, final String clientSecret) {
             runOnUiThread(new Runnable() {
                 @Override public void run() {
+                    OAuthKeepAliveService.start(MainActivity.this);
                     GoogleOAuth.connect(MainActivity.this, clientId, clientSecret,
                         new GoogleOAuth.Callback() {
                             @Override public void onSuccess(final String token) {
+                                OAuthKeepAliveService.stop(MainActivity.this);
                                 DriveMedia.setAccessToken(token);
                                 if (destroyed) return;
                                 if (appView != null) {
@@ -2800,6 +2802,7 @@ public class MainActivity extends Activity {
                             }
 
                             @Override public void onError(final String message) {
+                                OAuthKeepAliveService.stop(MainActivity.this);
                                 if (destroyed) return;
                                 try {
                                     new AlertDialog.Builder(MainActivity.this)

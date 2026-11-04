@@ -52,7 +52,7 @@ Requisitos: JDK 17, Android SDK platform 37 e build-tools 37.0.0.
 ./build-android.sh
 ```
 
-O APK assinado sai em `build/DrivePlay-Android-1.3.4.apk`.
+O APK assinado sai em `build/DrivePlay-Android-1.3.5.apk`.
 
 > Guarde o arquivo `keystore/driveplay-release.jks`. O Android só instala uma
 > atualização por cima se ela tiver a mesma assinatura; sem esse keystore, é preciso
@@ -67,7 +67,7 @@ PLATFORM_VERSION=37.0 TARGET_SDK=37 ./build-android.sh
 Para outra versão:
 
 ```bash
-VERSION_NAME=1.3.4 VERSION_CODE=8 ./build-android.sh
+VERSION_NAME=1.3.5 VERSION_CODE=9 ./build-android.sh
 ```
 
 ## Estrutura
@@ -87,7 +87,12 @@ app/src/main/java/.../LibraryStore.java  persistência nativa da biblioteca
 
 ## Versão
 
-1.3.4 (versionCode 8)
+1.3.5 (versionCode 9)
+
+A 1.3.5 mantém um **serviço em primeiro plano** enquanto o login do Google está
+aberto no navegador. O Samsung Freecess congelava o app em segundo plano, deixando a
+conexão do navegador para `127.0.0.1` presa em `SYN_SENT`; com o serviço, o app
+continua aceitando o retorno do login.
 
 A 1.3.4 aumenta de 3 para **15 minutos** o tempo que o app espera o retorno do login
 do Google. O login pode envolver senha, 2FA e escolha de conta; com 3 minutos o
