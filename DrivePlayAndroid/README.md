@@ -52,7 +52,7 @@ Requisitos: JDK 17, Android SDK platform 37 e build-tools 37.0.0.
 ./build-android.sh
 ```
 
-O APK assinado sai em `build/DrivePlay-Android-1.3.5.apk`.
+O APK assinado sai em `build/DrivePlay-Android-1.3.6.apk`.
 
 > Guarde o arquivo `keystore/driveplay-release.jks`. O Android só instala uma
 > atualização por cima se ela tiver a mesma assinatura; sem esse keystore, é preciso
@@ -67,7 +67,7 @@ PLATFORM_VERSION=37.0 TARGET_SDK=37 ./build-android.sh
 Para outra versão:
 
 ```bash
-VERSION_NAME=1.3.5 VERSION_CODE=9 ./build-android.sh
+VERSION_NAME=1.3.6 VERSION_CODE=10 ./build-android.sh
 ```
 
 ## Estrutura
@@ -87,7 +87,18 @@ app/src/main/java/.../LibraryStore.java  persistência nativa da biblioteca
 
 ## Versão
 
-1.3.5 (versionCode 9)
+1.3.6 (versionCode 10)
+
+A 1.3.6 abre o vídeo mais rápido:
+
+- o link do Drive é resolvido em paralelo com a montagem da interface;
+- o ExoPlayer começa a tocar com ~0,8 s de buffer em vez de 2,5 s;
+- o começo e o fim do MKV (cabeçalho e índice de busca) ficam em memória,
+  evitando duas viagens extras ao Drive na abertura;
+- o vídeo já começa no ponto salvo, sem baixar o começo para depois pular.
+
+Na prática, reabrir o mesmo episódio caiu para ~1,1 s e um episódio novo abriu
+em ~3,2 s no Galaxy Z Flip (antes ficava em ~4,6 s).
 
 A 1.3.5 mantém um **serviço em primeiro plano** enquanto o login do Google está
 aberto no navegador. O Samsung Freecess congelava o app em segundo plano, deixando a

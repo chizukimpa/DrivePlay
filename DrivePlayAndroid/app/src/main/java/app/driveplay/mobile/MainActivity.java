@@ -867,6 +867,7 @@ public class MainActivity extends Activity {
             return;
         }
 
+        android.util.Log.d("DrivePlay", "showPlayer start " + fileId);
         closePlayer(false);
         playerIsLocal = false;
         currentFileId = fileId;
@@ -888,6 +889,27 @@ public class MainActivity extends Activity {
         }
         savePlayerSession();
 
+        final double resumeAt = resumePositionFor(fileId);
+        // Resolve o link do Drive em paralelo com a montagem da interface.
+        // O WebView do player e o ExoPlayer levam algumas centenas de ms; a
+        // resolução é a parte mais lenta da abertura, então começa primeiro.
+        final String cookie = DriveMedia.loginCookie();
+        final String targetId = fileId;
+        io.execute(new Runnable() {
+            @Override public void run() {
+                final String token = GoogleOAuth.accessToken(MainActivity.this);
+                DriveMedia.setAccessToken(token);
+                DriveMedia.prefetch(targetId, cookie);
+                runOnUiThread(new Runnable() {
+                    @Override public void run() {
+                        if (destroyed || nativePlayer == null) return;
+                        if (!targetId.equals(currentFileId)) return;
+                        nativePlayer.open(targetId, currentTitle, cookie, resumeAt);
+                    }
+                });
+            }
+        });
+
         buildPlayerShell();
         buildNativeVideo(fileId, currentTitle);
         buildPlayerOverlayPage(fileId, currentTitle);
@@ -899,22 +921,6 @@ public class MainActivity extends Activity {
         lastServicePlaying = true;
         PlaybackService.rememberTitle(currentTitle);
         PlaybackService.start(this, true);
-
-        final String cookie = DriveMedia.loginCookie();
-        final String targetId = fileId;
-        io.execute(new Runnable() {
-            @Override public void run() {
-                final String token = GoogleOAuth.accessToken(MainActivity.this);
-                DriveMedia.setAccessToken(token);
-                runOnUiThread(new Runnable() {
-                    @Override public void run() {
-                        if (destroyed || nativePlayer == null) return;
-                        if (!targetId.equals(currentFileId)) return;
-                        nativePlayer.open(targetId, currentTitle, cookie);
-                    }
-                });
-            }
-        });
     }
 
     private void applyDriveApiKey(String json) {
@@ -1610,6 +1616,16 @@ public class MainActivity extends Activity {
             return new JSONObject(json).optBoolean("fillScreen", false);
         } catch (Exception ignored) {
             return false;
+        }
+    }
+
+    /** Saved position to start at, respecting the "retomar" setting. */
+    private double resumePositionFor(String fileId) {
+        try {
+            if (!new JSONObject(settingsJson).optBoolean("resumePlayback", true)) return 0;
+            return libraryStore.getProgress(fileId);
+        } catch (Exception ignored) {
+            return 0;
         }
     }
 

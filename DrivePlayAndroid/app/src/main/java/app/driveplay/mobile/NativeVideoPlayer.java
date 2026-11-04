@@ -30,8 +30,12 @@ import androidx.media3.common.Tracks;
 import androidx.media3.common.VideoSize;
 import androidx.media3.common.text.Cue;
 import androidx.media3.common.text.CueGroup;
+import androidx.media3.datasource.DataSource;
+import androidx.media3.datasource.DataSpec;
 import androidx.media3.datasource.DefaultDataSource;
 import androidx.media3.datasource.DefaultHttpDataSource;
+import androidx.media3.datasource.TransferListener;
+import androidx.media3.exoplayer.DefaultLoadControl;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.source.MediaSource;
 import androidx.media3.exoplayer.source.MergingMediaSource;
@@ -40,6 +44,7 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -104,6 +109,7 @@ final class NativeVideoPlayer {
     private String pendingUrl;
     private String pendingTitle;
     private String pendingCookie;
+    private double pendingResumeSeconds;
 
     // Preview-stream fallback for the Drive download quota.
     private WebView probe;
@@ -278,10 +284,21 @@ final class NativeVideoPlayer {
 
     /** Resolves the Drive URL in the background and starts playback. */
     void open(final String fileId, final String title, final String cookie) {
+        open(fileId, title, cookie, 0);
+    }
+
+    /**
+     * Opens a Drive file already at {@code resumeSeconds}. Starting at the
+     * saved position avoids downloading and decoding the beginning of the
+     * episode only to seek a few seconds later.
+     */
+    void open(final String fileId, final String title, final String cookie,
+              final double resumeSeconds) {
         pendingTitle = title;
         currentFileId = fileId;
         fallbackFromCache = false;
         retryInFlight = false;
+        pendingResumeSeconds = resumeSeconds;
         android.util.Log.d("DrivePlay", "native open " + fileId);
         main.post(new Runnable() {
             @Override public void run() {
@@ -323,6 +340,7 @@ final class NativeVideoPlayer {
         if (uri == null) return;
         pendingTitle = title;
         currentFileId = "";
+        pendingResumeSeconds = 0;
         fallbackStarted = false;
         fallbackFromCache = false;
         retryInFlight = false;
@@ -351,17 +369,100 @@ final class NativeVideoPlayer {
         releasePlayer();
         try {
             DefaultHttpDataSource.Factory http = buildHttp(url, false);
-            DefaultDataSource.Factory dataSource = new DefaultDataSource.Factory(context, http);
+            DefaultDataSource.Factory dataSource = new DefaultDataSource.Factory(
+                context, new PrefetchDataSourceFactory(http));
             createPlayer(dataSource);
-            player.setMediaItem(MediaItem.fromUri(Uri.parse(url)));
+            player.setMediaItem(MediaItem.fromUri(Uri.parse(url)),
+                pendingResumeSeconds > 5 ? (long) (pendingResumeSeconds * 1000) : 0);
             player.prepare();
             player.play();
+            android.util.Log.d("DrivePlay", "startPlayback pos=" + player.getCurrentPosition());
             pendingUrl = url;
             resetContentDetection();
             startPump();
             scheduleContentDetection();
         } catch (Throwable error) {
             fail("Falha ao iniciar o player: " + error.getMessage());
+        }
+    }
+
+    /**
+     * Serves the prefetched MKV header/tail from memory. Everything else goes
+     * to the normal HTTP data source.
+     */
+    private static final class PrefetchDataSourceFactory implements DataSource.Factory {
+        private final DataSource.Factory delegate;
+
+        PrefetchDataSourceFactory(DataSource.Factory delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override public DataSource createDataSource() {
+            return new PrefetchDataSource(delegate.createDataSource());
+        }
+    }
+
+    private static final class PrefetchDataSource implements DataSource {
+        private final DataSource delegate;
+        private DriveMedia.ByteRange range;
+        private int rangeOffset;
+        private Uri uri;
+        private boolean opened;
+        private boolean delegated;
+
+        PrefetchDataSource(DataSource delegate) {
+            this.delegate = delegate;
+        }
+
+        @Override public void addTransferListener(TransferListener transferListener) {
+            delegate.addTransferListener(transferListener);
+        }
+
+        @Override public long open(DataSpec dataSpec) throws IOException {
+            uri = dataSpec.uri;
+            String url = uri == null ? null : uri.toString();
+            DriveMedia.ByteRange cached = DriveMedia.cachedRange(url, dataSpec.position);
+            if (cached == null && DriveMedia.isNearTail(url, dataSpec.position)) {
+                // The tail prefetch usually finishes while the player is
+                // starting. Waiting here is still cheaper than a new round
+                // trip to Drive.
+                DriveMedia.awaitTail(url, 2500);
+                cached = DriveMedia.cachedRange(url, dataSpec.position);
+            }
+            if (cached != null) {
+                range = cached;
+                rangeOffset = cached.offset(dataSpec.position);
+                delegated = false;
+                opened = true;
+                android.util.Log.d("DrivePlay", "cache hit pos=" + dataSpec.position);
+                return cached.data.length - rangeOffset;
+            }
+            delegated = true;
+            opened = true;
+            return delegate.open(dataSpec);
+        }
+
+        @Override public int read(byte[] buffer, int offset, int length) throws IOException {
+            if (!opened) return C.RESULT_END_OF_INPUT;
+            if (range != null) {
+                int available = range.data.length - rangeOffset;
+                if (available <= 0) return C.RESULT_END_OF_INPUT;
+                int count = Math.min(length, available);
+                System.arraycopy(range.data, rangeOffset, buffer, offset, count);
+                rangeOffset += count;
+                return count;
+            }
+            return delegate.read(buffer, offset, length);
+        }
+
+        @Override public Uri getUri() {
+            return delegated ? delegate.getUri() : uri;
+        }
+
+        @Override public void close() throws IOException {
+            opened = false;
+            range = null;
+            if (delegated) delegate.close();
         }
     }
 
@@ -388,14 +489,51 @@ final class NativeVideoPlayer {
             }
         }
         http.setDefaultRequestProperties(headers);
+        final long[] startedAt = {0};
+        final long[] bytes = {0};
+        http.setTransferListener(new TransferListener() {
+            @Override public void onTransferInitializing(DataSource source, DataSpec dataSpec,
+                                                          boolean isNetwork) {
+                startedAt[0] = android.os.SystemClock.elapsedRealtime();
+                bytes[0] = 0;
+                android.util.Log.d("DrivePlay", "http init host="
+                    + (dataSpec.uri == null ? "?" : dataSpec.uri.getHost())
+                    + " pos=" + dataSpec.position);
+            }
+
+            @Override public void onTransferStart(DataSource source, DataSpec dataSpec,
+                                                   boolean isNetwork) {
+                android.util.Log.d("DrivePlay", "http start +"
+                    + (android.os.SystemClock.elapsedRealtime() - startedAt[0]) + "ms");
+            }
+
+            @Override public void onBytesTransferred(DataSource source, DataSpec dataSpec,
+                                                      boolean isNetwork, int transferred) {
+                bytes[0] += transferred;
+            }
+
+            @Override public void onTransferEnd(DataSource source, DataSpec dataSpec,
+                                                 boolean isNetwork) {
+                android.util.Log.d("DrivePlay", "http end " + bytes[0] + "B in "
+                    + (android.os.SystemClock.elapsedRealtime() - startedAt[0]) + "ms");
+            }
+        });
         return http;
     }
 
     private void createPlayer(DefaultDataSource.Factory dataSource) {
         ProgressiveMediaSource.Factory source =
             new ProgressiveMediaSource.Factory(dataSource);
+        // Começa a tocar assim que houver ~0,8 s de buffer, em vez dos 2,5 s
+        // padrão do ExoPlayer. O buffer maior continua enchendo em segundo plano.
+        DefaultLoadControl loadControl = new DefaultLoadControl.Builder()
+            .setBufferDurationsMs(12000, 60000, 800, 1500)
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .setBackBuffer(30000, true)
+            .build();
         player = new ExoPlayer.Builder(context)
             .setMediaSourceFactory(source)
+            .setLoadControl(loadControl)
             .setSeekBackIncrementMs(10000)
             .setSeekForwardIncrementMs(10000)
             .build();
@@ -409,7 +547,10 @@ final class NativeVideoPlayer {
         player.addListener(new Player.Listener() {
             @Override public void onPlaybackStateChanged(int state) {
                 if (state == Player.STATE_BUFFERING) lastBufferingMs = System.currentTimeMillis();
-                if (state == Player.STATE_READY) lastError = "";
+                if (state == Player.STATE_READY) {
+                    lastError = "";
+                    android.util.Log.d("DrivePlay", "player ready");
+                }
                 if (state == Player.STATE_ENDED) {
                     pushState();
                     listener.onState(stateJson(true, true, null));
@@ -1088,6 +1229,10 @@ final class NativeVideoPlayer {
         long duration = player.getDuration();
         long target = Math.max(0, (long) (seconds * 1000));
         if (duration > 0) target = Math.min(target, duration - 500);
+        // The HTML chrome also restores the saved position when it becomes
+        // ready. If native already started there, a second seek would flush
+        // the decoder and rebuffer for nothing.
+        if (Math.abs(target - player.getCurrentPosition()) < 1500) return;
         player.seekTo(target);
     }
 

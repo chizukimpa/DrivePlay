@@ -26,6 +26,9 @@ final class DriveMedia {
     private static final int MAX_REDIRECTS = 8;
     private static final long CACHE_OK_MS = 10 * 60 * 1000L;
     private static final long CACHE_FAIL_MS = 30 * 1000L;
+    /** Small ranges kept in memory so ExoPlayer does not pay another Drive round trip. */
+    private static final int PREFETCH_HEAD_BYTES = 256 * 1024;
+    private static final int PREFETCH_TAIL_BYTES = 128 * 1024;
     private static final Pattern CONFIRM = Pattern.compile("name=\"confirm\"\\s+value=\"([^\"]+)\"");
     private static final Pattern UUID = Pattern.compile("name=\"uuid\"\\s+value=\"([^\"]+)\"");
     private static String apiKey = "";
@@ -37,6 +40,48 @@ final class DriveMedia {
                 return size() > 24;
             }
         };
+    /** One lock per file so a prefetch and the player never hit Drive twice. */
+    private static final java.util.HashMap<String, Object> LOCKS =
+        new java.util.HashMap<>();
+
+    private static final java.util.LinkedHashMap<String, Prefetch> PREFETCH =
+        new java.util.LinkedHashMap<String, Prefetch>(8, 0.75f, true) {
+            @Override
+            protected boolean removeEldestEntry(
+                java.util.Map.Entry<String, Prefetch> eldest) {
+                return size() > 4;
+            }
+        };
+
+    static final class Prefetch {
+        final long length;
+        volatile ByteRange head;
+        volatile ByteRange tail;
+        final java.util.concurrent.CountDownLatch tailLatch =
+            new java.util.concurrent.CountDownLatch(1);
+
+        Prefetch(long length) {
+            this.length = length;
+        }
+    }
+
+    static final class ByteRange {
+        final long start;
+        final byte[] data;
+
+        ByteRange(long start, byte[] data) {
+            this.start = start;
+            this.data = data;
+        }
+
+        boolean contains(long position) {
+            return position >= start && position < start + data.length;
+        }
+
+        int offset(long position) {
+            return (int) (position - start);
+        }
+    }
 
     private DriveMedia() {}
 
@@ -94,25 +139,60 @@ final class DriveMedia {
         String cacheKey = fileId + "|" + (cookie == null ? "" : cookie.hashCode())
             + "|" + apiKey.hashCode();
         long now = android.os.SystemClock.elapsedRealtime();
-        synchronized (CACHE) {
-            CachedResult cached = CACHE.get(cacheKey);
-            if (cached != null && cached.expiresAt > now) {
-                return copyOf(cached.result);
+        Result cached = cachedResult(cacheKey, now);
+        if (cached != null) return cached;
+
+        Object lock;
+        synchronized (LOCKS) {
+            lock = LOCKS.get(cacheKey);
+            if (lock == null) {
+                lock = new Object();
+                LOCKS.put(cacheKey, lock);
             }
         }
+        try {
+            synchronized (lock) {
+                // Another thread (the prefetch, usually) may have finished
+                // while this one waited for the lock.
+                cached = cachedResult(cacheKey, android.os.SystemClock.elapsedRealtime());
+                if (cached != null) return cached;
 
-        Result result = resolveUncached(fileId, cookie);
-        synchronized (CACHE) {
-            CACHE.put(cacheKey, new CachedResult(
-                copyOf(result),
-                now + (result.error == null ? CACHE_OK_MS : CACHE_FAIL_MS)
-            ));
+                Result result = resolveUncached(fileId, cookie);
+                synchronized (CACHE) {
+                    CACHE.put(cacheKey, new CachedResult(
+                        copyOf(result),
+                        android.os.SystemClock.elapsedRealtime()
+                            + (result.error == null ? CACHE_OK_MS : CACHE_FAIL_MS)
+                    ));
+                }
+                return result;
+            }
+        } finally {
+            synchronized (LOCKS) {
+                if (LOCKS.get(cacheKey) == lock) LOCKS.remove(cacheKey);
+            }
         }
-        return result;
+    }
+
+    private static Result cachedResult(String cacheKey, long now) {
+        synchronized (CACHE) {
+            CachedResult cached = CACHE.get(cacheKey);
+            if (cached != null && cached.expiresAt > now) return copyOf(cached.result);
+        }
+        return null;
+    }
+
+    /**
+     * Starts resolving a video while the player UI is still being built. The
+     * real player open then finds the URL in the cache instead of paying for a
+     * second round trip.
+     */
+    static void prefetch(String fileId, String cookie) {
+        resolve(fileId, cookie);
     }
 
     private static Result resolveUncached(String fileId, String cookie) {
-        Result result = resolveViaApi(fileId);
+        Result result = resolveViaApi(fileId, cookie);
         if (result != null && result.error == null && !TextUtils.isEmpty(result.url)) {
             android.util.Log.d("DrivePlay", "resolve via OAuth Drive API ok");
             return result;
@@ -210,43 +290,58 @@ final class DriveMedia {
      * "too many users" download limit of the web endpoint. It works for files
      * shared with "anyone with the link", which is the case of the app folders.
      */
-    private static Result resolveViaApi(String fileId) {
+    private static Result resolveViaApi(String fileId, String cookie) {
         if (TextUtils.isEmpty(accessToken)) return null;
         Result result = new Result();
         HttpURLConnection connection = null;
         try {
             String url = "https://www.googleapis.com/drive/v3/files/" + fileId
                 + "?alt=media&supportsAllDrives=true";
-            connection = (HttpURLConnection) new URL(url).openConnection();
-            connection.setInstanceFollowRedirects(true);
-            connection.setConnectTimeout(12000);
-            connection.setReadTimeout(20000);
-            connection.setRequestProperty("User-Agent", UA);
-            connection.setRequestProperty("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8");
-            connection.setRequestProperty("Authorization", "Bearer " + accessToken);
-            connection.setRequestProperty("Range", "bytes=0-2047");
+            connection = apiConnection(url);
             int status = connection.getResponseCode();
             String type = connection.getContentType();
-            android.util.Log.d("DrivePlay", "OAuth API status=" + status + " type=" + type);
+            int hops = 0;
+            // Follow the Drive redirect here and hand ExoPlayer the final
+            // usercontent URL. Letting ExoPlayer repeat the 302 costs another
+            // DNS/TLS round trip before the first byte of video.
+            while (status >= 300 && status < 400 && hops++ < MAX_REDIRECTS) {
+                String location = connection.getHeaderField("Location");
+                if (TextUtils.isEmpty(location)) break;
+                String next = new URL(new URL(url), location).toString();
+                connection.disconnect();
+                url = next;
+                connection = apiConnection(url);
+                status = connection.getResponseCode();
+                type = connection.getContentType();
+            }
+            android.util.Log.d("DrivePlay", "OAuth API status=" + status
+                + " type=" + type + " hops=" + hops);
             if (status >= 200 && status < 400
                 && (type == null || !type.contains("text/html"))) {
-                byte[] head = readBytes(connection, 2048);
-                if (looksLikeMedia(head) || (type != null && type.startsWith("video/"))) {
-                    result.url = connection.getURL().toString();
-                    result.contentType = type;
-                    result.rangeSupported = status == 206;
-                    String range = connection.getHeaderField("Content-Range");
-                    String length = connection.getHeaderField("Content-Length");
-                    if (range != null) {
-                        int slash = range.lastIndexOf('/');
-                        if (slash > 0) {
-                            try { result.length = Long.parseLong(range.substring(slash + 1)); }
-                            catch (NumberFormatException ignored) {}
-                        }
-                    } else if (length != null) {
-                        try { result.length = Long.parseLong(length); }
+                long total = -1;
+                String contentRange = connection.getHeaderField("Content-Range");
+                String contentLength = connection.getHeaderField("Content-Length");
+                if (contentRange != null) {
+                    int slash = contentRange.lastIndexOf('/');
+                    if (slash > 0) {
+                        try { total = Long.parseLong(contentRange.substring(slash + 1)); }
                         catch (NumberFormatException ignored) {}
                     }
+                } else if (contentLength != null) {
+                    try { total = Long.parseLong(contentLength); }
+                    catch (NumberFormatException ignored) {}
+                }
+
+                // Start the cue-index request before reading the header body:
+                // both then share the same network wait.
+                startTailPrefetch(url, cookie, total);
+                byte[] head = readBytes(connection, PREFETCH_HEAD_BYTES);
+                if (looksLikeMedia(head) || (type != null && type.startsWith("video/"))) {
+                    result.url = url;
+                    result.contentType = type;
+                    result.rangeSupported = status == 206;
+                    result.length = total;
+                    cacheHead(url, head);
                     return result;
                 }
             }
@@ -260,6 +355,142 @@ final class DriveMedia {
             }
         }
         return result;
+    }
+
+    private static HttpURLConnection apiConnection(String url) throws Exception {
+        HttpURLConnection connection = (HttpURLConnection) new URL(url).openConnection();
+        connection.setInstanceFollowRedirects(false);
+        connection.setConnectTimeout(12000);
+        connection.setReadTimeout(20000);
+        connection.setRequestProperty("User-Agent", UA);
+        connection.setRequestProperty("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8");
+        // The token only goes to the Drive API host; the usercontent URL it
+        // redirects to is already signed and does not need it.
+        if (url.contains("googleapis.com")) {
+            connection.setRequestProperty("Authorization", "Bearer " + accessToken);
+        }
+        connection.setRequestProperty("Range", "bytes=0-" + (PREFETCH_HEAD_BYTES - 1));
+        return connection;
+    }
+
+    /**
+     * Keeps the first and last chunks of the file in memory. ExoPlayer opens
+     * separate range requests for the MKV header and for the cue index at the
+     * end of the file; both are tiny, but each one costs a full Drive round
+     * trip (650-1200 ms on this connection).
+     */
+    private static void startTailPrefetch(String url, String cookie, long length) {
+        final Prefetch prefetch = new Prefetch(length);
+        synchronized (PREFETCH) {
+            PREFETCH.put(url, prefetch);
+        }
+        if (length <= 12) {
+            prefetch.tailLatch.countDown();
+            return;
+        }
+        final long start = Math.max(0, length - PREFETCH_TAIL_BYTES);
+        final String tailUrl = url;
+        final String tailCookie = cookie;
+        Thread thread = new Thread(new Runnable() {
+            @Override public void run() {
+                try {
+                    byte[] tail = fetchRange(tailUrl, tailCookie, start, prefetch.length);
+                    if (tail != null && tail.length > 0) {
+                        prefetch.tail = new ByteRange(start, tail);
+                        android.util.Log.d("DrivePlay", "prefetch tail " + tail.length + "B");
+                    }
+                } finally {
+                    prefetch.tailLatch.countDown();
+                }
+            }
+        }, "driveplay-tail-prefetch");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private static void cacheHead(String url, byte[] head) {
+        if (head == null || head.length < 12) return;
+        Prefetch prefetch;
+        synchronized (PREFETCH) {
+            prefetch = PREFETCH.get(url);
+        }
+        if (prefetch != null) prefetch.head = new ByteRange(0, head);
+    }
+
+    static ByteRange cachedRange(String url, long position) {
+        if (url == null) return null;
+        Prefetch prefetch;
+        synchronized (PREFETCH) {
+            prefetch = PREFETCH.get(url);
+        }
+        if (prefetch == null) return null;
+        ByteRange head = prefetch.head;
+        if (head != null && head.contains(position)) return head;
+        ByteRange tail = prefetch.tail;
+        if (tail != null && tail.contains(position)) return tail;
+        return null;
+    }
+
+    static boolean isNearTail(String url, long position) {
+        if (url == null) return false;
+        Prefetch prefetch;
+        synchronized (PREFETCH) {
+            prefetch = PREFETCH.get(url);
+        }
+        return prefetch != null && prefetch.length > 0
+            && position >= prefetch.length - PREFETCH_TAIL_BYTES;
+    }
+
+    static void awaitTail(String url, long timeoutMs) {
+        if (url == null) return;
+        Prefetch prefetch;
+        synchronized (PREFETCH) {
+            prefetch = PREFETCH.get(url);
+        }
+        if (prefetch == null) return;
+        try {
+            prefetch.tailLatch.await(timeoutMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+        } catch (InterruptedException error) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static byte[] fetchRange(String url, String cookie, long start, long end) {
+        HttpURLConnection connection = null;
+        try {
+            connection = (HttpURLConnection) new URL(url).openConnection();
+            connection.setInstanceFollowRedirects(true);
+            connection.setConnectTimeout(12000);
+            connection.setReadTimeout(20000);
+            connection.setRequestProperty("User-Agent", UA);
+            connection.setRequestProperty("Accept-Language", "pt-BR,pt;q=0.9,en;q=0.8");
+            if (url.contains("googleapis.com") && !TextUtils.isEmpty(accessToken)) {
+                connection.setRequestProperty("Authorization", "Bearer " + accessToken);
+            } else if (!TextUtils.isEmpty(cookie)) {
+                connection.setRequestProperty("Cookie", cookie);
+            }
+            connection.setRequestProperty("Range", "bytes=" + start + "-" + (end - 1));
+            int status = connection.getResponseCode();
+            if (status != 206) {
+                android.util.Log.d("DrivePlay", "tail prefetch status=" + status);
+                return null;
+            }
+            String contentRange = connection.getHeaderField("Content-Range");
+            if (contentRange != null && !contentRange.startsWith("bytes " + start + "-")) {
+                android.util.Log.d("DrivePlay", "tail prefetch wrong range");
+                return null;
+            }
+            int max = (int) Math.min(end - start, PREFETCH_TAIL_BYTES);
+            return readBytes(connection, max);
+        } catch (Exception error) {
+            android.util.Log.d("DrivePlay", "tail prefetch failed "
+                + error.getClass().getSimpleName());
+            return null;
+        } finally {
+            if (connection != null) {
+                try { connection.disconnect(); } catch (Exception ignored) {}
+            }
+        }
     }
 
     /** Explains the HTML pages Drive returns instead of the file. */
