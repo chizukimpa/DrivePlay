@@ -185,7 +185,10 @@ final class GoogleOAuth {
                         }
                     });
 
-                    server.setSoTimeout(180000);
+                    // O login do Google pode envolver senha, 2FA e escolha de
+                    // conta. Três minutos eram pouco e o servidor fechava antes
+                    // do navegador voltar para o loopback (ERR_CONNECTION_REFUSED).
+                    server.setSoTimeout(900000);
                     socket = server.accept();
                     String firstLine = readLine(socket.getInputStream());
                     String target = "";

@@ -52,7 +52,7 @@ Requisitos: JDK 17, Android SDK platform 37 e build-tools 37.0.0.
 ./build-android.sh
 ```
 
-O APK assinado sai em `build/DrivePlay-Android-1.3.3.apk`.
+O APK assinado sai em `build/DrivePlay-Android-1.3.4.apk`.
 
 > Guarde o arquivo `keystore/driveplay-release.jks`. O Android só instala uma
 > atualização por cima se ela tiver a mesma assinatura; sem esse keystore, é preciso
@@ -67,7 +67,7 @@ PLATFORM_VERSION=37.0 TARGET_SDK=37 ./build-android.sh
 Para outra versão:
 
 ```bash
-VERSION_NAME=1.3.3 VERSION_CODE=7 ./build-android.sh
+VERSION_NAME=1.3.4 VERSION_CODE=8 ./build-android.sh
 ```
 
 ## Estrutura
@@ -87,7 +87,12 @@ app/src/main/java/.../LibraryStore.java  persistência nativa da biblioteca
 
 ## Versão
 
-1.3.3 (versionCode 7)
+1.3.4 (versionCode 8)
+
+A 1.3.4 aumenta de 3 para **15 minutos** o tempo que o app espera o retorno do login
+do Google. O login pode envolver senha, 2FA e escolha de conta; com 3 minutos o
+navegador chegava de volta ao `127.0.0.1` depois do servidor já ter fechado
+(`ERR_CONNECTION_REFUSED` / “Poll timed out”).
 
 A 1.3.3 corrige o **próximo episódio** no player nativo: o botão de avançar e o
 avanço automático ao terminar (ou ao pular o encerramento) agora chamam a ponte
