@@ -54,6 +54,10 @@ Requisitos: JDK 17, Android SDK platform 37 e build-tools 37.0.0.
 
 O APK assinado sai em `build/DrivePlay-Android-1.3.3.apk`.
 
+> Guarde o arquivo `keystore/driveplay-release.jks`. O Android só instala uma
+> atualização por cima se ela tiver a mesma assinatura; sem esse keystore, é preciso
+> desinstalar o app (e perder os dados) antes de instalar uma build nova.
+
 Para gerar com outro SDK:
 
 ```bash
